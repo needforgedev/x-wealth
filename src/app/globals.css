@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* Design tokens lifted from the X-Wealth Figma file (X-Wealth-Final-x-Yash). */
+@theme {
+  --color-brand: #627bff;
+  --color-ink: #2d3342;
+  --color-muted: #939bae;
+  --color-line: #dedede;
+  /* Slightly darker rule used on unselected option cards and radio outlines. */
+  --color-line-strong: #cdced4;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f9f9f9;
+
+  /* Avatar tint — the Figma ellipse is this blue at 21% opacity. */
+  --color-avatar: #6284ff;
+  --color-avatar-ink: #35407b;
+
+  /* Interest chips: selected fill vs. the idle border/text grey. */
+  --color-chip: #8791c0;
+  --color-chip-idle: #a5a5a5;
+
+  /* Buy/sell signal accents and their 8% tinted icon chips. */
+  --color-buy: #2dc295;
+  --color-sell: #c22d51;
+  /* Unread-count pill and the chat-row timestamp. */
+  --color-unread: #ff4d6d;
+  --color-timestamp: #979797;
+
+  /* Gains, upward deltas, and the rating ring's filled arc. */
+  --color-positive: #5ec4a5;
+  --color-ring-track: #eeeeee;
+  /* Ink used inside the small category tags on group cards. */
+  --color-tag-ink: #54565b;
+  /* Underline beneath the active tab on the segmented page tabs. */
+  --color-tab-underline: #cde7ff;
+
+  /* Highlighted chat bubble and the thread link inside signal messages. */
+  --color-bubble-alt: #ced6ff;
+  --color-bubble-alt-ink: #383450;
+  --color-thread: #6979c9;
+  /* Unfilled track on the risk meter. */
+  --color-meter-track: #c4c4c4;
+  /* Band behind the pinned root message on a thread. */
+  --color-thread-band: #f6f6f6;
+
+  /* Profile section — headings, settings rows, form fields and dividers. */
+  --color-ink-strong: #202833;
+  --color-ink-soft: #6e7a8a;
+  --color-menu-ink: #a6aab3;
+  --color-field-line: #d5dde5;
+  --color-field-line-strong: #aebecd;
+  --color-divider-soft: #f0f0f0;
+
+  /* Advisor screens — dark performance hero on the advisor Chats artboard. */
+  --color-advisor-hero: #2b304f;
+  /* Group avatar tint on Create/Edit Group (pink, used at 21% like the profile one). */
+  --color-group-avatar: #ff62d3;
+  /* Destructive row on Edit Group Info: a 10% wash behind pink-red label text. */
+  --color-danger: #ff3131;
+  --color-danger-ink: #e51e66;
+  /* "Editing Group Info" header, the description character counter, and the
+     greyed handle placeholder in the URL field. */
+  --color-editing-ink: #93969a;
+  --color-counter: #c9c9c9;
+  --color-placeholder-soft: #a9a9a9;
+  /* Blue tick beside a completed onboarding step title. */
+  --color-step-check: #2196f3;
+
+  /* Favourite-stocks list. */
+  --color-stock-ink: #161926;
+  --color-stock-muted: #92acb5;
+  --color-up: #3cc182;
+  --color-down: #c1225b;
+
+  --shadow-card: 0 4px 25px 0 rgb(0 0 0 / 0.04);
+
+  /* The artboards are iPhone 11 Pro / X sized. The app column tracks that
+     width and centres itself once the viewport outgrows it. */
+  --container-app: 420px;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-roboto: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  --font-plex: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Horizontal rails scroll but never show a bar — matches the artboards. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+body {
+  background: var(--color-surface-alt);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* Every text layer in the Figma file uses `line-height: normal`, not
+     Tailwind's 1.5 default. Matching it here keeps vertical rhythm on spec
+     across all screens. Override per-element with `leading-*` where a design
+     actually specifies a value. */
+  line-height: normal;
+}
