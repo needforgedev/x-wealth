@@ -11,6 +11,8 @@ type GroupTopBarProps = {
   tint?: string;
   backHref?: string;
   href?: string;
+  /** `light` is the Alpha treatment — dark type on a white bar. */
+  tone?: "brand" | "light";
 };
 
 /** Conversation header: back, group identity, and an overflow menu. */
@@ -20,16 +22,24 @@ export function GroupTopBar({
   tint = "#E6E0FF",
   backHref = "/chats",
   href,
+  tone = "brand",
 }: GroupTopBarProps) {
   const router = useRouter();
+  const isLight = tone === "light";
 
   return (
-    <header className="relative flex h-[60px] shrink-0 items-center bg-brand pl-[16px] pr-[10px]">
+    <header
+      className={`relative flex h-[60px] shrink-0 items-center pl-[16px] pr-[10px] ${
+        isLight ? "bg-surface" : "bg-brand"
+      }`}
+    >
       <button
         type="button"
         aria-label="Go back"
         onClick={() => router.push(backHref)}
-        className="flex size-[44px] shrink-0 items-center justify-center text-white"
+        className={`flex size-[44px] shrink-0 items-center justify-center ${
+          isLight ? "text-ink" : "text-white"
+        }`}
       >
         <MaskIcon src="/assets/icon-arrow-back.svg" width={15.33} height={15.33} />
       </button>
@@ -52,10 +62,18 @@ export function GroupTopBar({
           />
         </span>
         <span className="ml-[19px] min-w-0">
-          <span className="block truncate text-[14px] font-semibold capitalize text-white">
+          <span
+            className={`block truncate text-[14px] font-semibold capitalize ${
+              isLight ? "text-[#3f3f3f]" : "text-white"
+            }`}
+          >
             {name}
           </span>
-          <span className="mt-[3px] block truncate text-[13px] font-semibold capitalize text-white/56">
+          <span
+            className={`mt-[3px] block truncate text-[13px] font-semibold capitalize ${
+              isLight ? "text-[#282828]/56" : "text-white/56"
+            }`}
+          >
             {members}
           </span>
         </span>
@@ -64,7 +82,9 @@ export function GroupTopBar({
       <button
         type="button"
         aria-label="Group options"
-        className="flex size-[44px] shrink-0 items-center justify-center text-white"
+        className={`flex size-[44px] shrink-0 items-center justify-center ${
+          isLight ? "text-ink" : "text-white"
+        }`}
       >
         <MaskIcon src="/assets/icon-more-vert.svg" width={3.5} height={14} />
       </button>

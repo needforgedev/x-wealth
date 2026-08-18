@@ -13,6 +13,8 @@ type TextFieldProps = Omit<ComponentProps<"input">, "size"> & {
   label: string;
   /** Adornment shown on the right edge of the field. */
   trailing?: Trailing;
+  /** The Alpha artboards set their labels in sentence case, not uppercase. */
+  labelCase?: "upper" | "normal";
   containerClassName?: string;
 };
 
@@ -20,6 +22,7 @@ type TextFieldProps = Omit<ComponentProps<"input">, "size"> & {
 export function TextField({
   label,
   trailing,
+  labelCase = "upper",
   containerClassName = "",
   className = "",
   id,
@@ -32,7 +35,9 @@ export function TextField({
     <div className={containerClassName}>
       <label
         htmlFor={inputId}
-        className="block text-[13px] font-medium uppercase text-muted"
+        className={`block text-[13px] font-medium text-muted ${
+          labelCase === "upper" ? "uppercase" : ""
+        }`}
       >
         {label}
       </label>

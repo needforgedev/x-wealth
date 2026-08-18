@@ -15,12 +15,31 @@ import { TextField } from "@/components/ui/TextField";
  * Complete Profile is drawn the same on both the Investor and Advisor pages —
  * an investor continues to the onboarding questions, an advisor to KYC.
  */
+type Placeholders = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  dob: string;
+  gender: string;
+};
+
+const DEFAULT_PLACEHOLDERS: Placeholders = {
+  firstName: "Yash",
+  lastName: "Bhardwaj",
+  email: "you@example.com",
+  dob: "19-08-1998",
+  gender: "Male",
+};
+
 export function CompleteProfileScreenBody({
   backHref,
   nextHref,
+  placeholders = DEFAULT_PLACEHOLDERS,
 }: {
   backHref: string;
   nextHref: string;
+  /** The Alpha artboard labels the same fields with prompts, not sample values. */
+  placeholders?: Placeholders;
 }) {
   const router = useRouter();
   const [agreed, setAgreed] = useState(true);
@@ -53,17 +72,30 @@ export function CompleteProfileScreenBody({
         </div>
 
         <div className="mt-[50px] grid grid-cols-2 gap-x-[9px] gap-y-[19px]">
-          <TextField label="First name" autoComplete="given-name" placeholder="Yash" />
-          <TextField label="Last name" autoComplete="family-name" placeholder="Bhardwaj" />
+          <TextField
+            label="First name"
+            autoComplete="given-name"
+            placeholder={placeholders.firstName}
+          />
+          <TextField
+            label="Last name"
+            autoComplete="family-name"
+            placeholder={placeholders.lastName}
+          />
           <TextField
             containerClassName="col-span-2"
             label="Email"
             type="email"
             autoComplete="email"
-            placeholder="you@example.com"
+            placeholder={placeholders.email}
           />
-          <TextField label="DOB" trailing="chevron" readOnly placeholder="19-08-1998" />
-          <TextField label="Gender" trailing="chevron" readOnly placeholder="Male" />
+          <TextField label="DOB" trailing="chevron" readOnly placeholder={placeholders.dob} />
+          <TextField
+            label="Gender"
+            trailing="chevron"
+            readOnly
+            placeholder={placeholders.gender}
+          />
         </div>
 
         <Checkbox className="mt-[28px]" checked={agreed} onCheckedChange={setAgreed}>

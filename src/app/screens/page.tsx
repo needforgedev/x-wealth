@@ -127,7 +127,103 @@ const ADVISOR_GROUPS: ScreenGroup[] = [
   },
 ];
 
-const ALL_GROUPS = [...GROUPS, ...ADVISOR_GROUPS];
+/**
+ * The Alpha page of the Figma file — a second pass at onboarding and home that
+ * neither of the other two pages carries. Built on its own routes so the
+ * Investor and Advisor screens stay exactly as drawn; re-point the links if
+ * Alpha is adopted as the live flow.
+ */
+const ALPHA_GROUPS: ScreenGroup[] = [
+  {
+    heading: "Alpha — auth & onboarding",
+    screens: [
+      {
+        href: "/alpha",
+        title: "Login",
+        node: "Alpha / Login",
+        note: "Advisor login — phone plus Continue with Google",
+      },
+      {
+        href: "/alpha/google",
+        title: "Google",
+        node: "Alpha / Google",
+        note: "Artboard is a flat screenshot of the OAuth chooser; this is a stand-in",
+      },
+      { href: "/alpha/verify-number", title: "Verify Number", node: "Alpha / OTP Screen (2125:1776)" },
+      { href: "/alpha/otp", title: "Enter OTP", node: "Alpha / OTP Screen (2103:1871)" },
+      {
+        href: "/alpha/complete-profile",
+        title: "Complete Profile",
+        node: "Alpha / Auto-fill",
+      },
+      {
+        href: "/alpha/onboarding-questions",
+        title: "Onboarding Questions",
+        node: "Alpha / Onboarding Questions",
+        note: "Experience and interests on one step",
+      },
+      { href: "/alpha/join-groups", title: "Join Groups", node: "Alpha / Join Groups" },
+    ],
+  },
+  {
+    heading: "Alpha — home",
+    screens: [
+      {
+        href: "/alpha/chats",
+        title: "Chats",
+        node: "Alpha / Chats Screen (2103:2481)",
+        note: "Account header with avatar, switch badge and bell",
+      },
+      {
+        href: "/alpha/home",
+        title: "Home + market strip",
+        node: "Alpha / Chats Screen (2133:1778)",
+      },
+      {
+        href: "/alpha/home/loading-cards",
+        title: "Home (signals loading, rail)",
+        node: "Alpha / Chats Screen (2134:2281)",
+      },
+      {
+        href: "/alpha/home/loading-list",
+        title: "Home (signals loading, list)",
+        node: "Alpha / Chats Screen (2133:2070)",
+      },
+      {
+        href: "/alpha/home/empty",
+        title: "Home (no groups)",
+        node: "Alpha / Chats Screen (2134:2424)",
+      },
+    ],
+  },
+  {
+    heading: "Alpha — groups & discovery",
+    screens: [
+      {
+        href: "/alpha/groups/traders-heaven",
+        title: "Group Chat View",
+        node: "Alpha / Group Chat View (2103:2703)",
+      },
+      {
+        href: "/alpha/groups/traders-heaven/tinted",
+        title: "Group Chat View (tinted)",
+        node: "Alpha / Group Chat View (2105:1667)",
+      },
+      {
+        href: "/alpha/discover",
+        title: "Group Discovery",
+        node: "Alpha / Group Discoery (2105:1827)",
+      },
+      {
+        href: "/alpha/discover/stats",
+        title: "Group Discovery (stat cards)",
+        node: "Alpha / Group Discoery (2105:2112)",
+      },
+    ],
+  },
+];
+
+const ALL_GROUPS = [...GROUPS, ...ADVISOR_GROUPS, ...ALPHA_GROUPS];
 const TOTAL = ALL_GROUPS.reduce((n, g) => n + g.screens.length, 0);
 
 /** Dev-only index so every built screen is one tap away during review. */
@@ -136,8 +232,8 @@ export default function ScreensIndexPage() {
     <main className="mx-auto min-h-dvh w-full max-w-app bg-surface px-6 py-10">
       <h1 className="text-[20px] font-semibold text-ink">X Wealth — Screens</h1>
       <p className="mt-2 text-[14px] text-muted">
-        All {TOTAL} screens from the Investor and Advisor pages of the Figma file. Node ids and
-        artboard names are shown for cross-referencing.
+        All {TOTAL} screens from the Investor, Advisor and Alpha pages of the Figma file. Node ids
+        and artboard names are shown for cross-referencing.
       </p>
 
       {ALL_GROUPS.map((group) => (
