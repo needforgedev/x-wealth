@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import {
@@ -26,10 +27,31 @@ export const advisors = pgTable(
       .notNull()
       .references(() => authUsers.id, { onDelete: "restrict" }),
 
-    sebiRegistrationNo: text("sebi_registration_no").notNull(),
+    /**
+     * Null until KYC is submitted.
+     *
+     * An advisor record exists from sign-up — `verification_status` defaults to
+     * `UNSUBMITTED`, which only makes sense if the row predates the
+     * registration number. The uniqueness constraint is therefore partial (see
+     * below), and a CHECK in the constraints migration requires the number to
+     * be present before the record can leave `UNSUBMITTED`.
+     */
+    sebiRegistrationNo: text("sebi_registration_no"),
     raasbEnlistmentNo: text("raasb_enlistment_no"),
     firmName: text("firm_name"),
     mcaNo: text("mca_no"),
+
+    /**
+     * Who the reviewer is looking at.
+     *
+     * These live here rather than in Supabase's `auth.users` metadata because
+     * ops has to read *another* user's details to review them, and reading
+     * another user's auth record needs the Admin API — which needs a secret key
+     * we have chosen not to hold (`plan.md` W1-22). Lower-sensitivity PII than
+     * PAN, which stays encrypted below.
+     */
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
 
     /**
      * Encrypted at rest via pgcrypto — never selected into logs, error messages
@@ -43,6 +65,8 @@ export const advisors = pgTable(
     verifiedAt: timestampTz("verified_at"),
     /** Admin who approved. Manual review is deliberate in v1 (W2-03). */
     verifiedByUserId: uuid("verified_by_user_id").references(() => authUsers.id),
+    /** Shown to the advisor so a rejection is actionable rather than a dead end. */
+    rejectionReason: text("rejection_reason"),
 
     /**
      * PaRRVA verification is prospective-only — it runs from the opt-in date
@@ -56,7 +80,11 @@ export const advisors = pgTable(
   },
   (t) => [
     uniqueIndex("advisors_user_id_key").on(t.userId),
-    uniqueIndex("advisors_sebi_registration_no_key").on(t.sebiRegistrationNo),
+    // Partial: many advisors may sit at UNSUBMITTED with no number, but a
+    // number, once given, belongs to exactly one advisor.
+    uniqueIndex("advisors_sebi_registration_no_key")
+      .on(t.sebiRegistrationNo)
+      .where(sql`${t.sebiRegistrationNo} is not null`),
     index("advisors_verification_status_idx").on(t.verificationStatus),
   ],
 );

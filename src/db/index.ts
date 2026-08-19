@@ -29,9 +29,6 @@ export * as schema from "./schema";
  * `drizzle.config.ts` should point at `DIRECT_URL` once both exist.
  */
 
-let client: ReturnType<typeof postgres> | undefined;
-let database: ReturnType<typeof drizzle<typeof schema>> | undefined;
-
 function connectionString(): string {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -44,19 +41,43 @@ function connectionString(): string {
 }
 
 /**
+ * The pool is cached on `globalThis`, not in module scope.
+ *
+ * Next's dev server re-evaluates modules on every hot reload. A module-scoped
+ * singleton is therefore not a singleton: each reload builds a fresh pool and
+ * abandons the previous one with its sockets still open. They accumulate
+ * against the pooler's connection limit until every query sits waiting —
+ * observed as 25–30 second page loads before this was fixed, which looks like a
+ * hang rather than the resource leak it is.
+ */
+const globalForDb = globalThis as unknown as {
+  __xwClient?: ReturnType<typeof postgres>;
+  __xwDb?: ReturnType<typeof drizzle<typeof schema>>;
+};
+
+/**
  * Lazily-constructed singleton. Lazy so that importing the schema — which the
  * migration tooling and tests do — never requires a live database.
  */
 export function db() {
-  if (!database) {
-    client = postgres(connectionString(), {
+  if (!globalForDb.__xwDb) {
+    globalForDb.__xwClient ??= postgres(connectionString(), {
       // Required on the transaction pooler. See the note above.
       prepare: false,
-      max: 1,
+      /**
+       * A small pool, not one connection. `max: 1` serialises every query in
+       * the process — a single page rendering three queries would run them
+       * one after another, and any concurrent request waits behind all of them.
+       * Supabase's transaction pooler multiplexes these onto far fewer server
+       * connections, so a handful here is cheap.
+       */
+      max: 10,
+      idle_timeout: 20,
+      connect_timeout: 10,
     });
-    database = drizzle(client, { schema, casing: "snake_case" });
+    globalForDb.__xwDb = drizzle(globalForDb.__xwClient, { schema, casing: "snake_case" });
   }
-  return database;
+  return globalForDb.__xwDb;
 }
 
 export type Database = ReturnType<typeof db>;

@@ -2,13 +2,15 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { CarouselDots } from "@/components/ui/CarouselDots";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { RoleTabs, type Role } from "@/components/ui/RoleTabs";
+import { normalisePhone } from "@/domain/phone";
+import { sendOtp } from "@/server/actions/auth";
 
 const COPY: Record<Role, { heading: string; subheading: string }> = {
   investor: {
@@ -27,7 +29,38 @@ export default function GetStartedPage() {
   const router = useRouter();
   const [role, setRole] = useState<Role>("investor");
   const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const { heading, subheading } = COPY[role];
+
+  /**
+   * The advisor path is live; the investor path is still the static walkthrough
+   * (PRD Phase 1 is advisor tooling only, so investors come later — see AD-15).
+   */
+  const start = () => {
+    setError(null);
+
+    if (role !== "advisor") {
+      router.push("/otp");
+      return;
+    }
+
+    const e164 = normalisePhone(phone);
+    if (!e164) {
+      setError("Enter a valid 10-digit mobile number.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await sendOtp(e164);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const hint = result.data.hint ? `&hint=${encodeURIComponent(result.data.hint)}` : "";
+      router.push(`/advisor/otp?phone=${encodeURIComponent(e164)}${hint}`);
+    });
+  };
 
   return (
     <AppShell>
@@ -93,12 +126,15 @@ export default function GetStartedPage() {
             onValueChange={setPhone}
           />
 
-          <PrimaryButton
-            className="mt-3"
-            onClick={() => router.push(role === "advisor" ? "/advisor/otp" : "/otp")}
-          >
-            Get Started
+          <PrimaryButton className="mt-3" disabled={pending} onClick={start}>
+            {pending ? "Sending code…" : "Get Started"}
           </PrimaryButton>
+
+          {error && (
+            <p role="alert" className="mt-2 text-center text-[14px] text-danger-ink">
+              {error}
+            </p>
+          )}
 
           <p className="mt-7 text-center text-[16px] font-medium text-muted">
             Already have an account?{" "}

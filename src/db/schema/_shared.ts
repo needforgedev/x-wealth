@@ -144,18 +144,11 @@ export type CostsBreakdown = {
 
 /**
  * A strategy definition is structured data, never code (`x-wealth-product.md`
- * §6). Kept deliberately loose here — the builder owns the shape, and the
- * validator in W4-07 owns correctness.
+ * §6). The shape is owned by `src/domain/strategy.ts` — re-exported here rather
+ * than restated, so the column type and the validator can never disagree about
+ * what a definition is.
  */
-export type StrategyDefinition = {
-  instruments: string[];
-  timeframe: string;
-  entry: unknown;
-  exit: unknown;
-  stopLoss: unknown;
-  positionSizing: unknown;
-  [key: string]: unknown;
-};
+export type { StrategyDefinition } from "@/domain/strategy";
 
 /**
  * Computed results. We report what happened and never characterise it — no

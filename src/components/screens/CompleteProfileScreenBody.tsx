@@ -35,14 +35,44 @@ export function CompleteProfileScreenBody({
   backHref,
   nextHref,
   placeholders = DEFAULT_PLACEHOLDERS,
+  onSubmit,
+  initial,
 }: {
   backHref: string;
   nextHref: string;
   /** The Alpha artboard labels the same fields with prompts, not sample values. */
   placeholders?: Placeholders;
+  /**
+   * Live save. When omitted the screen just navigates — how the investor and
+   * Alpha artboards still behave.
+   */
+  onSubmit?: (values: { firstName: string; lastName: string; email: string }) => Promise<string | null>;
+  /** Existing values, so a returning advisor edits rather than retypes. */
+  initial?: { firstName?: string; lastName?: string; email?: string };
 }) {
   const router = useRouter();
   const [agreed, setAgreed] = useState(true);
+  const [firstName, setFirstName] = useState(initial?.firstName ?? "");
+  const [lastName, setLastName] = useState(initial?.lastName ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const submit = async () => {
+    setError(null);
+    if (!onSubmit) {
+      router.push(nextHref);
+      return;
+    }
+    setPending(true);
+    const failure = await onSubmit({ firstName, lastName, email });
+    setPending(false);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    router.push(nextHref);
+  };
 
   return (
     <AppShell>
@@ -76,11 +106,15 @@ export function CompleteProfileScreenBody({
             label="First name"
             autoComplete="given-name"
             placeholder={placeholders.firstName}
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
           />
           <TextField
             label="Last name"
             autoComplete="family-name"
             placeholder={placeholders.lastName}
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
           />
           <TextField
             containerClassName="col-span-2"
@@ -88,6 +122,8 @@ export function CompleteProfileScreenBody({
             type="email"
             autoComplete="email"
             placeholder={placeholders.email}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
           <TextField label="DOB" trailing="chevron" readOnly placeholder={placeholders.dob} />
           <TextField
@@ -103,11 +139,18 @@ export function CompleteProfileScreenBody({
           <span className="font-medium underline">Terms &amp; Conditions</span>
         </Checkbox>
 
+        {error && (
+          <p role="alert" className="mt-3 text-center text-[14px] text-danger-ink">
+            {error}
+          </p>
+        )}
+
         <PrimaryButton
           className="mt-auto mb-[calc(29px+env(safe-area-inset-bottom))]"
-          onClick={() => router.push(nextHref)}
+          disabled={pending || !agreed}
+          onClick={submit}
         >
-          Continue
+          {pending ? "Saving…" : "Continue"}
         </PrimaryButton>
       </div>
     </AppShell>

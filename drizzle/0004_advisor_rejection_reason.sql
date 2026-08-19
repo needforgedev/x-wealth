@@ -1,0 +1,1 @@
+ALTER TABLE "advisors" ADD COLUMN "rejection_reason" text;

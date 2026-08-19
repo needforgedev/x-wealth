@@ -15,6 +15,27 @@
       "when": 1787043587967,
       "tag": "0001_invariant_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787120248546,
+      "tag": "0002_advisor_presubmission_and_admins",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787121401792,
+      "tag": "0003_advisor_contact_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787121461572,
+      "tag": "0004_advisor_rejection_reason",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  invariants:
+    name: Database invariants
+    runs-on: ubuntu-latest
+
+    # A plain Postgres container is enough to prove the constraints hold —
+    # they are triggers and grants, not Supabase features. Running them here
+    # means every push re-proves W1-04/05/06 without needing a live project.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: xwealth
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Create database and stand in for what Supabase provides
+        # The migrations reference auth.users by foreign key but deliberately do
+        # not create it — on Supabase that schema is owned by another role and
+        # creating it fails on permissions. A bare Postgres has to provide it.
+        run: |
+          psql -d postgres -c 'CREATE DATABASE xwealth'
+          psql -c "CREATE ROLE anon NOLOGIN"
+          psql -c "CREATE ROLE authenticated NOLOGIN"
+          psql -c "CREATE ROLE service_role NOLOGIN"
+          psql -c 'CREATE SCHEMA IF NOT EXISTS auth'
+          psql -c 'CREATE TABLE IF NOT EXISTS auth.users ("id" uuid PRIMARY KEY NOT NULL)'
+
+      - name: Apply migrations
+        run: |
+          for f in drizzle/*.sql; do
+            case "$f" in *verify_invariants.sql) continue;; esac
+            echo "--- $f"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Prove the invariants hold
+        run: psql -v ON_ERROR_STOP=1 -f drizzle/verify_invariants.sql
+
+      - name: Prove they hold for a role with full DML and no RLS
+        # The strongest form of the test. Supabase grants service_role broad
+        # privileges and it bypasses RLS entirely, so here we deliberately hand
+        # it back the UPDATE/DELETE that migration 0001 revoked — removing the
+        # grant layer — and re-run. Anything that still fails is failing because
+        # of a trigger, which is the only layer that holds under service_role.
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT USAGE ON SCHEMA public TO service_role;
+          GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+          GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+          GRANT USAGE ON SCHEMA auth TO service_role;
+          GRANT ALL ON ALL TABLES IN SCHEMA auth TO service_role;
+          SQL
+          psql -v ON_ERROR_STOP=1 -c 'SET ROLE service_role' -f drizzle/verify_invariants.sql
+
+      - name: No soft-delete columns on append-only tables
+        run: psql -v ON_ERROR_STOP=1 -c 'SELECT assert_no_soft_delete_columns()'

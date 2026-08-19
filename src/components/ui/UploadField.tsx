@@ -6,17 +6,34 @@ type UploadFieldProps = {
   label: string;
   action: string;
   containerClassName?: string;
+  /**
+   * The box is already a button, so callers hook onto it here. Wrapping this
+   * component in another button nests interactive elements — invalid HTML, and
+   * React fails hydration on it.
+   */
+  onClick?: () => void;
+  selected?: boolean;
 };
 
 /** Uppercase label above a 108px drop box with a cloud glyph and an add action. */
-export function UploadField({ label, action, containerClassName = "" }: UploadFieldProps) {
+export function UploadField({
+  label,
+  action,
+  containerClassName = "",
+  onClick,
+  selected = false,
+}: UploadFieldProps) {
   return (
     <div className={containerClassName}>
       <p className="text-[13px] font-medium uppercase text-muted">{label}</p>
 
       <button
         type="button"
-        className="mt-[10px] flex h-[108px] w-full items-center justify-center gap-[31px] rounded-[4px] border border-line"
+        onClick={onClick}
+        aria-pressed={onClick ? selected : undefined}
+        className={`mt-[10px] flex h-[108px] w-full items-center justify-center gap-[31px] rounded-[4px] border ${
+          selected ? "border-brand bg-brand/[0.04]" : "border-line"
+        }`}
       >
         <Image
           src="/assets/icon-cloud-upload.svg"

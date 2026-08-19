@@ -21,6 +21,7 @@
 
 export * from "./_shared";
 export * from "./auth";
+export * from "./admins";
 export * from "./advisors";
 export * from "./strategies";
 export * from "./testing";

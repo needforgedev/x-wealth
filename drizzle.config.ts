@@ -1,4 +1,12 @@
+import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
+
+/**
+ * drizzle-kit is a standalone CLI — it does not inherit Next.js's env loading,
+ * so `.env.local` has to be read explicitly or `DIRECT_URL` arrives undefined
+ * and `migrate` fails with an empty connection string.
+ */
+config({ path: ".env.local" });
 
 /**
  * drizzle-kit configuration.

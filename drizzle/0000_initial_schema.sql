@@ -1,12 +1,20 @@
--- EDITED BY HAND. Supabase owns `auth` — these two statements were emitted as
--- bare CREATEs despite `schemaFilter: ["public"]`, which would fail against a
--- real Supabase project where both already exist. Made idempotent so this
--- migration is a no-op there and still works on a bare Postgres.
+-- EDITED BY HAND.
+--
+-- drizzle-kit emitted `CREATE SCHEMA "auth"` and `CREATE TABLE "auth"."users"`
+-- here, despite `schemaFilter: ["public"]`, because our schema references
+-- `auth.users` by foreign key. Both have been removed.
+--
+-- `IF NOT EXISTS` was not enough: on Supabase the `postgres` role does not own
+-- the `auth` schema, so `CREATE TABLE IF NOT EXISTS auth.users` fails on
+-- permissions before it ever gets to the existence check. Verified against a
+-- live project — it is the reason the first migration attempt failed.
+--
+-- Supabase always provides both. A bare Postgres (CI) creates them itself
+-- before migrating — see .github/workflows/ci.yml.
 --
 -- This edit is one-time: drizzle/meta records auth.users in the snapshot, so
 -- later `drizzle-kit generate` runs diff against it and will not re-emit these.
--- If you ever see them return, re-apply the IF NOT EXISTS treatment.
-CREATE SCHEMA IF NOT EXISTS "auth";
+-- If they ever come back, delete them again.
 --> statement-breakpoint
 CREATE TYPE "public"."advisor_document_type" AS ENUM('SEBI_REGISTRATION_CERTIFICATE', 'RAASB_ENLISTMENT', 'PAN_CARD', 'FIRM_INCORPORATION', 'ADDRESS_PROOF', 'OTHER');--> statement-breakpoint
 CREATE TYPE "public"."billing_period" AS ENUM('MONTHLY', 'QUARTERLY', 'ANNUAL');--> statement-breakpoint
@@ -20,9 +28,8 @@ CREATE TYPE "public"."risk_profile" AS ENUM('LOW', 'MEDIUM', 'HIGH');--> stateme
 CREATE TYPE "public"."subscription_status" AS ENUM('ACTIVE', 'PAST_DUE', 'CANCELLED', 'EXPIRED');--> statement-breakpoint
 CREATE TYPE "public"."trade_side" AS ENUM('BUY', 'SELL');--> statement-breakpoint
 CREATE TYPE "public"."verification_status" AS ENUM('UNSUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED', 'SUSPENDED');--> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "auth"."users" (
-	"id" uuid PRIMARY KEY NOT NULL
-);
+-- auth.users intentionally not created here — Supabase owns it. See the note
+-- at the top of this file.
 --> statement-breakpoint
 CREATE TABLE "advisor_documents" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
