@@ -33,17 +33,9 @@ export default function GetStartedPage() {
   const [pending, startTransition] = useTransition();
   const { heading, subheading } = COPY[role];
 
-  /**
-   * The advisor path is live; the investor path is still the static walkthrough
-   * (PRD Phase 1 is advisor tooling only, so investors come later — see AD-15).
-   */
+  /** Both roles are live. Which profile gets created depends on the tab. */
   const start = () => {
     setError(null);
-
-    if (role !== "advisor") {
-      router.push("/otp");
-      return;
-    }
 
     const e164 = normalisePhone(phone);
     if (!e164) {
@@ -58,7 +50,8 @@ export default function GetStartedPage() {
         return;
       }
       const hint = result.data.hint ? `&hint=${encodeURIComponent(result.data.hint)}` : "";
-      router.push(`/advisor/otp?phone=${encodeURIComponent(e164)}${hint}`);
+      const base = role === "advisor" ? "/advisor/otp" : "/otp";
+      router.push(`${base}?phone=${encodeURIComponent(e164)}${hint}`);
     });
   };
 

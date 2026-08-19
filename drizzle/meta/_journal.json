@@ -36,6 +36,13 @@
       "when": 1787121461572,
       "tag": "0004_advisor_rejection_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787130925819,
+      "tag": "0005_investor_contact_details",
+      "breakpoints": true
     }
   ]
 }

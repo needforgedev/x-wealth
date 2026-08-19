@@ -2,21 +2,16 @@ import { redirect } from "next/navigation";
 
 import { canOpenInvestorStep, nextInvestorPath } from "@/domain/investor-onboarding";
 import { currentIdentity } from "@/server/identity";
-import { InterestsForm } from "./InterestsForm";
+import { RiskForm } from "./RiskForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function ChooseInterestsPage() {
+export default async function RiskDisclosurePage() {
   const identity = await currentIdentity();
   if (!identity?.investor) redirect("/");
 
   const investor = identity.investor;
-  if (!canOpenInvestorStep(investor, "INTERESTS")) redirect(nextInvestorPath(investor));
+  if (!canOpenInvestorStep(investor, "RISK")) redirect(nextInvestorPath(investor));
 
-  return (
-    <InterestsForm
-      initial={investor.interests ?? []}
-      nextHref={nextInvestorPath({ ...investor, interests: ["set"] })}
-    />
-  );
+  return <RiskForm />;
 }

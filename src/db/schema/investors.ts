@@ -16,6 +16,10 @@ export const investors = pgTable(
       .notNull()
       .references(() => authUsers.id, { onDelete: "restrict" }),
 
+    /** Collected on Complete Profile. Null until then, as for advisors. */
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+
     experienceLevel: experienceLevel("experience_level"),
     interests: text("interests").array(),
 

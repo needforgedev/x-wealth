@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { advisors, investors } from "@/db/schema";
 import { nextAdvisorPath } from "@/domain/advisor-onboarding";
+import { nextInvestorPath } from "@/domain/investor-onboarding";
 import { normalisePhone } from "@/domain/phone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -139,19 +140,21 @@ async function ensureProfile(
   }
 
   const [existingInvestor] = await database
-    .select({ id: investors.id })
+    .select()
     .from(investors)
     .where(eq(investors.userId, userId))
     .limit(1);
-  if (existingInvestor) return { role: "INVESTOR", next: "/chats" };
+  if (existingInvestor) {
+    return { role: "INVESTOR", next: nextInvestorPath(existingInvestor) };
+  }
 
   if (requested === "ADVISOR") {
     const [created] = await database.insert(advisors).values({ userId }).returning();
     return { role: "ADVISOR", next: nextAdvisorPath(created) };
   }
 
-  await database.insert(investors).values({ userId }).onConflictDoNothing();
-  return { role: "INVESTOR", next: "/chats" };
+  const [createdInvestor] = await database.insert(investors).values({ userId }).returning();
+  return { role: "INVESTOR", next: nextInvestorPath(createdInvestor) };
 }
 
 export async function signOut(): Promise<ActionResult> {

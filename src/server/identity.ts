@@ -99,6 +99,12 @@ export async function requireAdvisor(): Promise<{ identity: Identity; advisor: A
   return { identity, advisor: identity.advisor };
 }
 
+export async function requireInvestor(): Promise<Investor> {
+  const identity = await requireIdentity();
+  if (!identity.investor) throw new NotAuthorisedError("This account is not an investor");
+  return identity.investor;
+}
+
 export async function requireAdmin(): Promise<Identity> {
   const identity = await requireIdentity();
   if (!identity.isAdmin) throw new NotAuthorisedError("Platform ops access required");
