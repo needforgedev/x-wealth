@@ -280,6 +280,85 @@ SELECT pg_temp.must_allow('rejoining after leaving',
     values ('e0000000-0000-0000-0000-0000000000ff','60000000-0000-0000-0000-0000000000ff',
             'd0000000-0000-0000-0000-0000000000ff')$$);
 
+\echo '--- signals: an amendment chain, not a tree (0007) ---'
+SELECT pg_temp.must_allow('amending a published call',
+  $$insert into signals(id,group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,risk_profile,disclosure_block,amends_signal_id)
+    values ('81000000-0000-0000-0000-0000000000ff','60000000-0000-0000-0000-0000000000ff',
+            '50000000-0000-0000-0000-0000000000ff','NSE:TATASTEEL','BUY',150.0000,130.0000,
+            '1d',now(),'MEDIUM','disclosure','80000000-0000-0000-0000-0000000000ff')$$);
+
+-- Two amendments of one call leave a reader with two contradictory "current"
+-- versions and no rule for picking. Correcting a correction amends the
+-- amendment instead, so the chain stays a line.
+SELECT pg_temp.must_reject('amending the same call twice',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,risk_profile,disclosure_block,amends_signal_id)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:TATASTEEL','BUY',151.0000,130.0000,'1d',now(),'MEDIUM','disclosure',
+            '80000000-0000-0000-0000-0000000000ff')$$);
+
+-- An amendment that could change the instrument would be an unrelated call
+-- wearing the history of the one it points at.
+-- Fixture ...fe is NSE:INFY / BUY; each of these changes exactly one inherited
+-- field, so a pass proves the trigger and not a coincidence.
+SELECT pg_temp.must_reject('an amendment that changes the instrument',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,risk_profile,disclosure_block,amends_signal_id)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:TATASTEEL','BUY',150.0000,130.0000,'1d',now(),'MEDIUM','disclosure',
+            '80000000-0000-0000-0000-0000000000fe')$$);
+
+SELECT pg_temp.must_reject('an amendment that flips the side',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,risk_profile,disclosure_block,amends_signal_id)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:INFY','SELL',150.0000,170.0000,'1d',now(),'MEDIUM','disclosure',
+            '80000000-0000-0000-0000-0000000000fe')$$);
+
+SELECT pg_temp.must_reject('amending a call that does not exist',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,risk_profile,disclosure_block,amends_signal_id)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:TATASTEEL','BUY',150.0000,130.0000,'1d',now(),'MEDIUM','disclosure',
+            '8f000000-0000-0000-0000-0000000000ff')$$);
+
+\echo '--- group_invitations: one way in, one way out (0007) ---'
+INSERT INTO group_invitations(id, group_id, invited_phone) VALUES
+  ('11000000-0000-0000-0000-0000000000ff', '60000000-0000-0000-0000-0000000000ff', '+919999900001');
+
+SELECT pg_temp.must_reject('an invitation to a number that is not E.164',
+  $$insert into group_invitations(group_id,invited_phone)
+    values ('60000000-0000-0000-0000-0000000000ff','9999900002')$$);
+SELECT pg_temp.must_reject('two open invitations for the same number',
+  $$insert into group_invitations(group_id,invited_phone)
+    values ('60000000-0000-0000-0000-0000000000ff','+919999900001')$$);
+SELECT pg_temp.must_reject('accepting without recording who accepted',
+  $$update group_invitations set status='ACCEPTED', accepted_at=now()
+    where id='11000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('repointing an invitation at another group',
+  $$update group_invitations set group_id='60000000-0000-0000-0000-0000000000ff'::uuid,
+        invited_phone='+919999900009'
+    where id='11000000-0000-0000-0000-0000000000ff'$$);
+
+-- Revoking is final. If it were not, a private group could be re-entered after
+-- the advisor closed the door.
+SELECT pg_temp.must_allow('revoking an open invitation',
+  $$update group_invitations set status='REVOKED', revoked_at=now()
+    where id='11000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('un-revoking it',
+  $$update group_invitations set status='PENDING', revoked_at=null
+    where id='11000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('accepting a revoked invitation',
+  $$update group_invitations set status='ACCEPTED', revoked_at=null, accepted_at=now(),
+        accepted_by_investor_id='e0000000-0000-0000-0000-0000000000ff'::uuid
+    where id='11000000-0000-0000-0000-0000000000ff'$$);
+
+-- A revoked invitation is history, so the same person can be invited again.
+SELECT pg_temp.must_allow('re-inviting a revoked number',
+  $$insert into group_invitations(group_id,invited_phone)
+    values ('60000000-0000-0000-0000-0000000000ff','+919999900001')$$);
+
 \echo '--- soft-delete guard (5.1) ---'
 SELECT pg_temp.must_allow('assert_no_soft_delete_columns() on a clean schema',
   $$select assert_no_soft_delete_columns()$$);

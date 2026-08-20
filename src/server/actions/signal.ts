@@ -1,6 +1,7 @@
 "use server";
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, lt } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
@@ -34,7 +35,7 @@ import {
 import type { ActionResult } from "@/server/actions/auth";
 
 /**
- * What an advisor posts into a group: trade calls and market views.
+ * What an advisor posts into a group: trade calls, amendments and market views.
  *
  * ## The missing forward test
  *
@@ -173,9 +174,97 @@ export async function postTradeCall(input: TradeCallInput): Promise<ActionResult
       })
       .returning({ id: signals.id });
 
-    revalidatePath(`/advisor/groups/${input.groupId}`);
-    revalidatePath(`/groups/${input.groupId}`);
+    revalidatePath(`/advisor/groups/${input.groupId}/manage`);
+    revalidatePath(`/investor/groups/${input.groupId}`);
     return { ok: true, data: { id: row.id } };
+  } catch (error) {
+    return { ok: false, error: messageFor(error) };
+  }
+}
+
+/**
+ * Correct a published call by publishing a new one that points at it.
+ *
+ * `signals` is append-only, so this is the only correction there is: the
+ * original stays visible forever and the amendment sits beside it. That is the
+ * whole design — a call that turned out wrong cannot be quietly edited into one
+ * that did not.
+ *
+ * The instrument, side, strategy and group are inherited from the original
+ * rather than re-entered. An "amendment" that changed the instrument would be a
+ * different call wearing the history of the one it replaced, and a trigger in
+ * migration 0007 refuses it at the database as well.
+ *
+ * A strategy withdrawn from the group does not block this. Correcting a
+ * mistake must not depend on still distributing the thing that caused it.
+ */
+export type AmendCallInput = Omit<TradeCallDraft, "symbol" | "side"> & { amendsSignalId: string };
+
+export async function amendTradeCall(
+  input: AmendCallInput,
+): Promise<ActionResult<{ id: string; groupId: string }>> {
+  try {
+    const { advisor } = await requirePublishingRights();
+
+    const amendedBy = alias(signals, "amending_call");
+    const [original] = await db()
+      .select({
+        id: signals.id,
+        groupId: signals.groupId,
+        strategyId: signals.strategyId,
+        symbol: signals.symbol,
+        side: signals.side,
+        timeframe: signals.timeframe,
+        supersededById: amendedBy.id,
+      })
+      .from(signals)
+      .innerJoin(groups, eq(groups.id, signals.groupId))
+      .leftJoin(amendedBy, eq(amendedBy.amendsSignalId, signals.id))
+      .where(and(eq(signals.id, input.amendsSignalId), eq(groups.advisorId, advisor.id)))
+      .limit(1);
+
+    if (!original) throw new NotAuthorisedError("No such call.");
+    if (original.supersededById) {
+      // One correction per call — enforced by a unique index too. Correcting a
+      // correction means amending the amendment, so the chain stays a line.
+      throw new NotAuthorisedError(
+        "This call has already been amended. Amend the amendment instead.",
+      );
+    }
+
+    const parsed = parseTradeCall({
+      ...input,
+      symbol: original.symbol,
+      side: original.side as TradeSide,
+    });
+    if (!parsed.ok) return { ok: false, error: parsed.issues[0].message };
+    const call = parsed.value;
+
+    const [row] = await db()
+      .insert(signals)
+      .values({
+        groupId: original.groupId,
+        strategyId: original.strategyId,
+        forwardTestId: null,
+        symbol: original.symbol,
+        side: original.side,
+        entryPrice: priceToString(call.entryPrice),
+        exitPrice: call.exitPrice === null ? null : priceToString(call.exitPrice),
+        stopLoss: priceToString(call.stopLoss),
+        targets: call.targets,
+        timeframe: original.timeframe,
+        validFrom: call.validFrom,
+        validUntil: call.validUntil,
+        rationale: call.rationale,
+        riskProfile: call.riskProfile,
+        disclosureBlock: buildDisclosureBlock(advisor, { forwardTested: false }),
+        amendsSignalId: original.id,
+      })
+      .returning({ id: signals.id });
+
+    revalidatePath(`/advisor/groups/${original.groupId}/manage`);
+    revalidatePath(`/investor/groups/${original.groupId}`);
+    return { ok: true, data: { id: row.id, groupId: original.groupId } };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
   }
@@ -206,8 +295,8 @@ export async function postMarketView(input: MarketViewInput): Promise<ActionResu
       })
       .returning({ id: marketViews.id });
 
-    revalidatePath(`/advisor/groups/${input.groupId}`);
-    revalidatePath(`/groups/${input.groupId}`);
+    revalidatePath(`/advisor/groups/${input.groupId}/manage`);
+    revalidatePath(`/investor/groups/${input.groupId}`);
     return { ok: true, data: { id: row.id } };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
@@ -238,6 +327,10 @@ export type FeedCall = {
   disclosureBlock: string;
   /** False for every call until the forward-test engine exists. */
   forwardTested: boolean;
+  /** Set when this call is itself a correction of an earlier one. */
+  amendsPublishedAt: Date | null;
+  /** Set when a later call corrects this one. The original still stands here. */
+  supersededAt: Date | null;
 };
 
 export type FeedView = {
@@ -252,6 +345,15 @@ export type FeedView = {
 
 export type FeedItem = FeedCall | FeedView;
 
+export type FeedPage = {
+  items: FeedItem[];
+  /** ISO timestamp to pass back as `before`, or null at the end of the feed. */
+  nextCursor: string | null;
+};
+
+const DEFAULT_PAGE = 20;
+const MAX_PAGE = 50;
+
 /**
  * Calls and views in one stream, newest first.
  *
@@ -259,10 +361,44 @@ export type FeedItem = FeedCall | FeedView;
  * nothing in common, and flattening them into shared columns to satisfy a
  * UNION would mean nullable everything and a `kind` column doing the work the
  * type system should do.
+ *
+ * ## Paging across two tables
+ *
+ * The cursor is a timestamp rather than an offset, because both tables are
+ * append-only at the top — an offset would re-show or skip rows as new posts
+ * arrive. Each table is asked for one more row than the page needs; the merged
+ * result is cut to the page and the last item's timestamp becomes the cursor.
+ *
+ * Two posts sharing a `published_at` to the microsecond would sit either side
+ * of the cut and one would be skipped. `now()` at that resolution makes this
+ * effectively impossible, and the alternative — a compound cursor over two
+ * tables with no shared key — is not worth the complexity it costs.
  */
-export async function groupFeed(groupId: string): Promise<ActionResult<FeedItem[]>> {
+export async function groupFeed(
+  groupId: string,
+  options: { before?: string; limit?: number } = {},
+): Promise<ActionResult<FeedPage>> {
   try {
     await assertCanReadGroup(groupId);
+
+    const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
+
+    let before: Date | null = null;
+    if (options.before) {
+      const parsed = new Date(options.before);
+      if (!Number.isNaN(parsed.getTime())) before = parsed;
+    }
+
+    const amended = alias(signals, "amended_call");
+    const amendedBy = alias(signals, "amending_call");
+
+    const callWhere = before
+      ? and(eq(signals.groupId, groupId), lt(signals.publishedAt, before))
+      : eq(signals.groupId, groupId);
+
+    const viewWhere = before
+      ? and(eq(marketViews.groupId, groupId), lt(marketViews.publishedAt, before))
+      : eq(marketViews.groupId, groupId);
 
     const [calls, views] = await Promise.all([
       db()
@@ -284,11 +420,18 @@ export async function groupFeed(groupId: string): Promise<ActionResult<FeedItem[
           riskProfile: signals.riskProfile,
           disclosureBlock: signals.disclosureBlock,
           forwardTestId: signals.forwardTestId,
+          amendsPublishedAt: amended.publishedAt,
+          supersededAt: amendedBy.publishedAt,
         })
         .from(signals)
         .innerJoin(strategies, eq(strategies.id, signals.strategyId))
-        .where(eq(signals.groupId, groupId))
-        .orderBy(desc(signals.publishedAt)),
+        .leftJoin(amended, eq(amended.id, signals.amendsSignalId))
+        // At most one row can match: a unique index allows only one amendment
+        // per call, so this join cannot fan the result out.
+        .leftJoin(amendedBy, eq(amendedBy.amendsSignalId, signals.id))
+        .where(callWhere)
+        .orderBy(desc(signals.publishedAt))
+        .limit(limit + 1),
 
       db()
         .select({
@@ -300,11 +443,12 @@ export async function groupFeed(groupId: string): Promise<ActionResult<FeedItem[
           disclosureBlock: marketViews.disclosureBlock,
         })
         .from(marketViews)
-        .where(eq(marketViews.groupId, groupId))
-        .orderBy(desc(marketViews.publishedAt)),
+        .where(viewWhere)
+        .orderBy(desc(marketViews.publishedAt))
+        .limit(limit + 1),
     ]);
 
-    const items: FeedItem[] = [
+    const merged: FeedItem[] = [
       ...calls.map(({ forwardTestId, ...call }) => ({
         kind: "CALL" as const,
         ...call,
@@ -313,8 +457,99 @@ export async function groupFeed(groupId: string): Promise<ActionResult<FeedItem[
       ...views.map((view) => ({ kind: "VIEW" as const, ...view })),
     ];
 
-    items.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
-    return { ok: true, data: items };
+    merged.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+
+    const items = merged.slice(0, limit);
+    const nextCursor =
+      merged.length > limit && items.length > 0
+        ? items[items.length - 1].publishedAt.toISOString()
+        : null;
+
+    return { ok: true, data: { items, nextCursor } };
+  } catch (error) {
+    return { ok: false, error: messageFor(error) };
+  }
+}
+
+/**
+ * One call, for the amendment form.
+ *
+ * Returns the fields an amendment may change, plus the ones it inherits so the
+ * form can show what is fixed.
+ */
+export type AmendableCall = {
+  id: string;
+  groupId: string;
+  strategyName: string;
+  symbol: string;
+  side: TradeSide;
+  entryPrice: string;
+  exitPrice: string | null;
+  stopLoss: string;
+  targets: SignalTarget[];
+  validFrom: Date;
+  validUntil: Date | null;
+  rationale: string | null;
+  riskProfile: RiskProfile;
+  publishedAt: Date;
+};
+
+export async function callToAmend(signalId: string): Promise<ActionResult<AmendableCall>> {
+  try {
+    const { advisor } = await requirePublishingRights();
+
+    const amendedBy = alias(signals, "amending_call");
+    const [row] = await db()
+      .select({
+        id: signals.id,
+        groupId: signals.groupId,
+        strategyName: strategies.name,
+        symbol: signals.symbol,
+        side: signals.side,
+        entryPrice: signals.entryPrice,
+        exitPrice: signals.exitPrice,
+        stopLoss: signals.stopLoss,
+        targets: signals.targets,
+        validFrom: signals.validFrom,
+        validUntil: signals.validUntil,
+        rationale: signals.rationale,
+        riskProfile: signals.riskProfile,
+        publishedAt: signals.publishedAt,
+        supersededById: amendedBy.id,
+      })
+      .from(signals)
+      .innerJoin(groups, eq(groups.id, signals.groupId))
+      .innerJoin(strategies, eq(strategies.id, signals.strategyId))
+      .leftJoin(amendedBy, eq(amendedBy.amendsSignalId, signals.id))
+      .where(and(eq(signals.id, signalId), eq(groups.advisorId, advisor.id)))
+      .limit(1);
+
+    if (!row) throw new NotAuthorisedError("No such call.");
+    if (row.supersededById) {
+      throw new NotAuthorisedError("This call has already been amended.");
+    }
+
+    // `supersededById` was selected to make the check above and is not part of
+    // what the form needs, so it is not carried through.
+    return {
+      ok: true,
+      data: {
+        id: row.id,
+        groupId: row.groupId,
+        strategyName: row.strategyName,
+        symbol: row.symbol,
+        side: row.side,
+        entryPrice: row.entryPrice,
+        exitPrice: row.exitPrice,
+        stopLoss: row.stopLoss,
+        targets: row.targets,
+        validFrom: row.validFrom,
+        validUntil: row.validUntil,
+        rationale: row.rationale,
+        riskProfile: row.riskProfile,
+        publishedAt: row.publishedAt,
+      },
+    };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
   }
@@ -351,6 +586,13 @@ function messageFor(error: unknown): string {
     // call. That is a bug here, not user error.
     console.error("[signal] attempted to mutate an append-only row", error);
     return "A published call cannot be changed. Post an amendment instead.";
+  }
+  if (message.includes("signals_one_amendment_per_call_key")) {
+    return "This call has already been amended. Amend the amendment instead.";
+  }
+  if (message.includes("amendment must keep")) {
+    console.error("[signal] amendment changed an inherited field", error);
+    return "An amendment cannot change the instrument, side or strategy.";
   }
 
   console.error("[signal] action failed", error);

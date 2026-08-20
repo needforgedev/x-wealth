@@ -100,8 +100,9 @@ export function NewGroupForm() {
 
       {visibility === "PRIVATE" && (
         <p className="text-[12px] text-muted">
-          Invitations are not built yet, so a private group has no way in. It will sit empty until
-          they are.
+          A private group does not appear on Discover. You invite people by mobile number from the
+          group&rsquo;s members screen, and an invitation waits for whoever signs in with that
+          number.
         </p>
       )}
 

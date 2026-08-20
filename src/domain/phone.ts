@@ -58,3 +58,17 @@ export function formatPhone(e164: string): string {
   }
   return e164;
 }
+
+/**
+ * The same number as Supabase stores it in `auth.users.phone` — E.164 without
+ * the leading `+`.
+ *
+ * Supabase drops the plus; we keep it, because E.164 includes it and a column
+ * that sometimes has it and sometimes does not is a column nobody can compare
+ * safely. So the conversion is explicit and lives here, next to the other
+ * direction, rather than as a `.replace(/^\+/, "")` scattered across queries —
+ * `dev-session.ts` already had one, and one is how you get three that disagree.
+ */
+export function supabasePhone(e164: string): string {
+  return e164.replace(/^\+/, "");
+}

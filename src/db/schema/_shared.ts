@@ -117,6 +117,19 @@ export const marketSegment = pgEnum("market_segment", ["EQUITY", "FNO", "COMMODI
  */
 export const marketStance = pgEnum("market_stance", ["BULLISH", "BEARISH", "NEUTRAL"]);
 
+/**
+ * A group invitation's life. One way: a PENDING invitation is either taken up
+ * or withdrawn, and neither is undone. Enforced by a trigger in migration 0007
+ * for the same reason the forward-test lifecycle is — an invitation that could
+ * be un-revoked is a private group that can be re-entered after the advisor
+ * closed the door.
+ */
+export const invitationStatus = pgEnum("invitation_status", [
+  "PENDING",
+  "ACCEPTED",
+  "REVOKED",
+]);
+
 // ---------------------------------------------------------------------------
 // Structured JSONB payloads
 // ---------------------------------------------------------------------------

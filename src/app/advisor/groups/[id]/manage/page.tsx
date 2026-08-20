@@ -26,8 +26,10 @@ export const dynamic = "force-dynamic";
  */
 export default async function ManageGroupPage({
   params,
+  searchParams,
 }: PageProps<"/advisor/groups/[id]/manage">) {
   const { id } = await params;
+  const { before } = await searchParams;
 
   const identity = await currentIdentity();
   if (!identity?.advisor) redirect("/");
@@ -50,7 +52,7 @@ export default async function ManageGroupPage({
   }
 
   const { group, published, available } = detail.data;
-  const feed = await groupFeed(id);
+  const feed = await groupFeed(id, { before: typeof before === "string" ? before : undefined });
 
   return (
     <AppShell>
@@ -66,6 +68,20 @@ export default async function ManageGroupPage({
           {group.description && (
             <p className="mt-2 text-[14px] leading-[1.5] text-ink">{group.description}</p>
           )}
+          <div className="mt-3 flex gap-4">
+            <Link
+              href={`/advisor/groups/${id}/manage/edit`}
+              className="text-[13px] font-semibold text-brand"
+            >
+              Group info
+            </Link>
+            <Link
+              href={`/advisor/groups/${id}/manage/members`}
+              className="text-[13px] font-semibold text-brand"
+            >
+              Members &amp; invites
+            </Link>
+          </div>
         </div>
 
         <section className="mt-8">
@@ -113,7 +129,30 @@ export default async function ManageGroupPage({
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">Posted</h2>
           <div className="mt-3">
             {feed.ok ? (
-              <GroupFeed items={feed.data} />
+              <>
+                <GroupFeed
+                  items={feed.data.items}
+                  amendHrefFor={(signalId) =>
+                    `/advisor/groups/${id}/manage/calls/${signalId}/amend`
+                  }
+                />
+                {feed.data.nextCursor && (
+                  <Link
+                    href={`/advisor/groups/${id}/manage?before=${encodeURIComponent(feed.data.nextCursor)}`}
+                    className="mt-3 block text-center text-[13px] font-semibold text-brand"
+                  >
+                    Load older
+                  </Link>
+                )}
+                {before && (
+                  <Link
+                    href={`/advisor/groups/${id}/manage`}
+                    className="mt-3 block text-center text-[13px] font-semibold text-muted"
+                  >
+                    Back to newest
+                  </Link>
+                )}
+              </>
             ) : (
               <p role="alert" className="text-[14px] text-danger-ink">
                 {feed.error}

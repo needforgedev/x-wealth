@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPhone, isE164, normalisePhone } from "./phone";
+import { formatPhone, isE164, normalisePhone, supabasePhone } from "./phone";
 
 describe("normalisePhone", () => {
   it("adds +91 to a bare Indian 10-digit number", () => {
@@ -55,5 +55,24 @@ describe("formatPhone", () => {
   it("leaves anything else alone", () => {
     expect(formatPhone("+12015550123")).toBe("+12015550123");
     expect(formatPhone("nonsense")).toBe("nonsense");
+  });
+});
+
+describe("supabasePhone", () => {
+  it("drops the plus, because that is how auth.users stores it", () => {
+    expect(supabasePhone("+919757242802")).toBe("919757242802");
+  });
+
+  it("round-trips through normalisePhone", () => {
+    // The pair has to be lossless: an invitation is matched by comparing a
+    // number we stored against one Supabase stored, and a conversion that did
+    // not round-trip would silently match nobody.
+    for (const e164 of ["+919757242802", "+12015550123", "+442071838750"]) {
+      expect(normalisePhone(supabasePhone(e164))).toBe(e164);
+    }
+  });
+
+  it("is idempotent on a number that already has no plus", () => {
+    expect(supabasePhone("919757242802")).toBe("919757242802");
   });
 });

@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 
 import { db } from "@/db";
+import { supabasePhone } from "@/domain/phone";
 
 /**
  * Development sign-in bypass.
@@ -105,8 +106,7 @@ export async function clearDevSession(): Promise<void> {
  */
 export async function findOrCreateUserByPhone(phone: string): Promise<string> {
   const database = db();
-  // Supabase stores phone numbers without the leading +.
-  const stored = phone.replace(/^\+/, "");
+  const stored = supabasePhone(phone);
 
   const existing = await database.execute<{ id: string }>(
     sql`select id from auth.users where phone = ${stored} limit 1`,

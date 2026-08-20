@@ -6,6 +6,7 @@ import {
   createdAt,
   groupVisibility,
   marketSegment,
+  invitationStatus,
   marketStance,
   paise,
   price,
@@ -271,5 +272,57 @@ export const marketViews = pgTable(
   (t) => [
     index("market_views_group_id_idx").on(t.groupId),
     index("market_views_published_at_idx").on(t.publishedAt),
+  ],
+);
+
+/**
+ * An invitation into a private group.
+ *
+ * Keyed on a phone number rather than an investor id, because the person being
+ * invited usually has no account yet — an advisor moving a Telegram channel
+ * across has a list of numbers, not a list of our user ids. The invitation
+ * therefore waits for whoever signs in with that number, and binds to the
+ * investor only at the moment it is accepted.
+ *
+ * Stored in E.164 with the leading `+`. Note that Supabase stores
+ * `auth.users.phone` *without* it, so matching the two is not string equality —
+ * see `supabasePhone()` in `src/domain/phone.ts`.
+ *
+ * Not append-only: an invitation is an offer, not a record of advice. But the
+ * transitions are one-way (migration 0007), so a revoked invitation cannot be
+ * quietly reinstated.
+ */
+export const groupInvitations = pgTable(
+  "group_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "restrict" }),
+
+    invitedPhone: text("invited_phone").notNull(),
+
+    status: invitationStatus("status").notNull().default("PENDING"),
+
+    /** Set together, once, when the invitation is taken up. */
+    acceptedAt: timestampTz("accepted_at"),
+    acceptedByInvestorId: uuid("accepted_by_investor_id").references(() => investors.id, {
+      onDelete: "restrict",
+    }),
+
+    revokedAt: timestampTz("revoked_at"),
+
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("group_invitations_group_id_idx").on(t.groupId),
+    index("group_invitations_phone_idx").on(t.invitedPhone),
+    /**
+     * One live offer per number per group. Partial, so a revoked invitation
+     * stays as history and the same person can be invited again later.
+     */
+    uniqueIndex("group_invitations_pending_key")
+      .on(t.groupId, t.invitedPhone)
+      .where(sql`${t.status} = 'PENDING'`),
   ],
 );

@@ -8,6 +8,7 @@ import {
   advisors,
   groupStrategies,
   groups,
+  investors,
   pricingTiers,
   strategies,
   strategyVersions,
@@ -620,4 +621,44 @@ function messageFor(error: unknown): string {
   if (error instanceof NotAuthenticatedError) return "Sign in first.";
   console.error("[group] action failed", error);
   return "Something went wrong. Try again.";
+}
+
+/**
+ * Who is in a group, for its advisor.
+ *
+ * Name and when they joined, and nothing else. A registered RA has a legitimate
+ * need to know who their subscribers are; they do not need a phone number or an
+ * email rendered onto a screen to know it, and `x-wealth-product.md` §10 is
+ * strict about where personal data is allowed to appear. If a real
+ * record-keeping obligation later needs contact details, that is a deliberate
+ * change with an audit-log entry attached, not a column quietly added here.
+ */
+export async function listGroupMembers(
+  groupId: string,
+): Promise<ActionResult<Array<{ id: string; name: string | null; joinedAt: Date }>>> {
+  try {
+    const { advisor } = await requirePublishingRights();
+
+    const [group] = await db()
+      .select({ id: groups.id })
+      .from(groups)
+      .where(and(eq(groups.id, groupId), eq(groups.advisorId, advisor.id)))
+      .limit(1);
+    if (!group) throw new NotAuthorisedError("No such group.");
+
+    const rows = await db()
+      .select({
+        id: subscriptions.id,
+        name: investors.contactName,
+        joinedAt: subscriptions.startedAt,
+      })
+      .from(subscriptions)
+      .innerJoin(investors, eq(investors.id, subscriptions.investorId))
+      .where(and(eq(subscriptions.groupId, groupId), eq(subscriptions.status, "ACTIVE")))
+      .orderBy(desc(subscriptions.startedAt));
+
+    return { ok: true, data: rows };
+  } catch (error) {
+    return { ok: false, error: messageFor(error) };
+  }
 }

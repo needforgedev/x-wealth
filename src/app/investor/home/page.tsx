@@ -5,8 +5,10 @@ import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
 import { hasAcknowledgedRisk, nextInvestorPath } from "@/domain/investor-onboarding";
 import { listJoinedGroups } from "@/server/actions/group";
+import { listMyInvitations } from "@/server/actions/invitation";
 import { currentIdentity } from "@/server/identity";
 import { SignOutButton } from "@/app/advisor/status/SignOutButton";
+import { AcceptInvitation } from "./AcceptInvitation";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +28,9 @@ export default async function InvestorHomePage() {
   const investor = identity.investor;
   if (!hasAcknowledgedRisk(investor)) redirect(nextInvestorPath(investor));
 
-  const result = await listJoinedGroups();
+  const [result, invitations] = await Promise.all([listJoinedGroups(), listMyInvitations()]);
   const groups = result.ok ? result.data : [];
+  const invited = invitations.ok ? invitations.data : [];
 
   return (
     <AppShell>
@@ -43,6 +46,46 @@ export default async function InvestorHomePage() {
             : "—"}
           {investor.interests?.length ? ` · ${investor.interests.join(", ")}` : ""}
         </p>
+
+        {/*
+          Above "your groups" because it is the only thing on this screen
+          waiting on the person rather than the other way round.
+        */}
+        {invited.length > 0 && (
+          <section className="mt-8">
+            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
+              Invitations
+            </h2>
+            <ul className="mt-3 flex flex-col gap-3">
+              {invited.map((invitation) => (
+                <li
+                  key={invitation.id}
+                  className="rounded-[8px] border border-brand/40 bg-surface p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold text-ink">
+                        {invitation.groupName}
+                      </p>
+                      <p className="mt-[2px] truncate text-[12px] text-muted">
+                        {invitation.advisorName ?? "Advisor"}
+                        {invitation.sebiRegistrationNo
+                          ? ` · ${invitation.sebiRegistrationNo}`
+                          : ""}
+                      </p>
+                    </div>
+                    <AcceptInvitation invitationId={invitation.id} />
+                  </div>
+                  {invitation.groupDescription && (
+                    <p className="mt-2 text-[13px] leading-[1.5] text-ink">
+                      {invitation.groupDescription}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <div className="mt-8 flex items-center justify-between">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AppBar } from "@/components/AppBar";
@@ -20,8 +21,12 @@ export const dynamic = "force-dynamic";
  * rendering a link. Before joining you see who runs it and how many strategies
  * are in it, which is enough to decide and nothing more.
  */
-export default async function InvestorGroupPage({ params }: PageProps<"/investor/groups/[id]">) {
+export default async function InvestorGroupPage({
+  params,
+  searchParams,
+}: PageProps<"/investor/groups/[id]">) {
   const { id } = await params;
+  const { before } = await searchParams;
 
   const identity = await currentIdentity();
   if (!identity?.investor) redirect("/");
@@ -42,7 +47,9 @@ export default async function InvestorGroupPage({ params }: PageProps<"/investor
   }
 
   const { group, joined, published } = detail.data;
-  const feed = joined ? await groupFeed(id) : null;
+  const feed = joined
+    ? await groupFeed(id, { before: typeof before === "string" ? before : undefined })
+    : null;
 
   return (
     <AppShell>
@@ -107,7 +114,25 @@ export default async function InvestorGroupPage({ params }: PageProps<"/investor
               </h2>
               <div className="mt-3">
                 {feed?.ok ? (
-                  <GroupFeed items={feed.data} />
+                  <>
+                    <GroupFeed items={feed.data.items} />
+                    {feed.data.nextCursor && (
+                      <Link
+                        href={`/investor/groups/${id}?before=${encodeURIComponent(feed.data.nextCursor)}`}
+                        className="mt-3 block text-center text-[13px] font-semibold text-brand"
+                      >
+                        Load older
+                      </Link>
+                    )}
+                    {before && (
+                      <Link
+                        href={`/investor/groups/${id}`}
+                        className="mt-3 block text-center text-[13px] font-semibold text-muted"
+                      >
+                        Back to newest
+                      </Link>
+                    )}
+                  </>
                 ) : (
                   <p role="alert" className="text-[14px] text-danger-ink">
                     {feed?.error ?? "Could not load this group."}

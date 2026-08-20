@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { formatPrice, priceFromString } from "@/domain/money";
 import { NOT_FORWARD_TESTED_NOTICE } from "@/domain/signal";
 import type { FeedItem } from "@/server/actions/signal";
@@ -47,11 +49,25 @@ function Disclosure({ text }: { text: string }) {
   );
 }
 
-function CallCard({ item }: { item: Extract<FeedItem, { kind: "CALL" }> }) {
+function CallCard({
+  item,
+  amendHref,
+}: {
+  item: Extract<FeedItem, { kind: "CALL" }>;
+  amendHref?: string;
+}) {
   const isBuy = item.side === "BUY";
+  const superseded = item.supersededAt !== null;
 
   return (
-    <article className="rounded-[8px] border border-line bg-surface p-4">
+    /*
+     * A superseded call is dimmed and never hidden. `signals` is append-only
+     * precisely so a call that turned out wrong stays where it was; fading it
+     * marks which one to act on without editing the record.
+     */
+    <article
+      className={`rounded-[8px] border border-line bg-surface p-4 ${superseded ? "opacity-60" : ""}`}
+    >
       <div className="flex items-start gap-3">
         <span
           className={`flex h-[28px] shrink-0 items-center rounded-[4px] px-2 text-[12px] font-semibold ${
@@ -68,6 +84,18 @@ function CallCard({ item }: { item: Extract<FeedItem, { kind: "CALL" }> }) {
         </div>
         <p className="shrink-0 text-[11px] text-muted">{when(item.publishedAt)}</p>
       </div>
+
+      {superseded && (
+        <p className="mt-3 rounded-[4px] bg-surface-alt px-3 py-2 text-[12px] font-medium text-ink">
+          Superseded by an amendment on {when(item.supersededAt as Date)}. Act on that one.
+        </p>
+      )}
+
+      {item.amendsPublishedAt && (
+        <p className="mt-3 rounded-[4px] bg-surface-alt px-3 py-2 text-[12px] text-muted">
+          Amends the call of {when(item.amendsPublishedAt)}, which stays below.
+        </p>
+      )}
 
       {/*
         The evidence line sits above the numbers, not below them. An investor
@@ -106,6 +134,12 @@ function CallCard({ item }: { item: Extract<FeedItem, { kind: "CALL" }> }) {
       {item.rationale && <p className="mt-2 text-[13px] leading-[1.5] text-ink">{item.rationale}</p>}
 
       <Disclosure text={item.disclosureBlock} />
+
+      {amendHref && !superseded && (
+        <Link href={amendHref} className="mt-3 block text-[13px] font-semibold text-brand">
+          Amend this call
+        </Link>
+      )}
     </article>
   );
 }
@@ -140,7 +174,14 @@ function ViewCard({ item }: { item: Extract<FeedItem, { kind: "VIEW" }> }) {
   );
 }
 
-export function GroupFeed({ items }: { items: FeedItem[] }) {
+export function GroupFeed({
+  items,
+  amendHrefFor,
+}: {
+  items: FeedItem[];
+  /** Advisor-side only: where "amend this call" goes for a given signal. */
+  amendHrefFor?: (signalId: string) => string;
+}) {
   if (items.length === 0) {
     return (
       <div className="rounded-[8px] border border-dashed border-line p-6 text-center">
@@ -156,7 +197,11 @@ export function GroupFeed({ items }: { items: FeedItem[] }) {
     <ul className="flex flex-col gap-3">
       {items.map((item) => (
         <li key={`${item.kind}-${item.id}`}>
-          {item.kind === "CALL" ? <CallCard item={item} /> : <ViewCard item={item} />}
+          {item.kind === "CALL" ? (
+            <CallCard item={item} amendHref={amendHrefFor?.(item.id)} />
+          ) : (
+            <ViewCard item={item} />
+          )}
         </li>
       ))}
     </ul>
