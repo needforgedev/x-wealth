@@ -58,20 +58,33 @@ describe("parts", () => {
   });
 });
 
+/**
+ * Every migration that adds a symbol CHECK. A new one has to be listed here, or
+ * the drift tests below silently stop covering it — which is the failure this
+ * whole section exists to prevent.
+ */
+const MIGRATIONS_WITH_SYMBOL_CHECKS = [
+  "drizzle/0001_invariant_constraints.sql",
+  "drizzle/0006_group_strategy_sharing.sql",
+];
+
+function migrationSql(): string {
+  return MIGRATIONS_WITH_SYMBOL_CHECKS.map((f) => readFileSync(f, "utf8")).join("\n");
+}
+
 describe("SQL drift", () => {
   it("uses the same pattern the database CHECK constraints use", () => {
-    const sql = readFileSync("drizzle/0001_invariant_constraints.sql", "utf8");
-    const found = [...sql.matchAll(/symbol ~ '([^']+)'/g)].map((m) => m[1]);
+    const found = [...migrationSql().matchAll(/symbol ~ '([^']+)'/g)].map((m) => m[1]);
 
-    expect(found.length, "expected symbol CHECK constraints in the migration").toBeGreaterThan(0);
+    expect(found.length, "expected symbol CHECK constraints in the migrations").toBeGreaterThan(0);
     for (const pattern of found) {
       expect(pattern).toBe(SYMBOL_PATTERN_SQL);
     }
   });
 
   it("covers every table that stores a symbol", () => {
-    const sql = readFileSync("drizzle/0001_invariant_constraints.sql", "utf8");
-    for (const table of ["paper_trades", "signals", "portfolio_entries"]) {
+    const sql = migrationSql();
+    for (const table of ["paper_trades", "signals", "portfolio_entries", "market_views"]) {
       expect(sql, `${table} needs a symbol CHECK`).toContain(`"${table}"\n  ADD CONSTRAINT "${table}_symbol_qualified_ck"`);
     }
   });

@@ -43,6 +43,13 @@
       "when": 1787130925819,
       "tag": "0005_investor_contact_details",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787201165463,
+      "tag": "0006_group_strategy_sharing",
+      "breakpoints": true
     }
   ]
 }

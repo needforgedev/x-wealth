@@ -154,6 +154,132 @@ SELECT pg_temp.must_reject('non-positive initial capital',
   $$insert into forward_tests(strategy_version_id,declared_hypothesis,initial_capital_paise,cost_model,planned_sessions)
     values ('c0000000-0000-0000-0000-0000000000ff','h',0,'{}'::jsonb,60)$$);
 
+\echo '--- signals: guards added with the 0006 relaxation ---'
+-- forward_test_id is nullable only until the forward-test engine exists. When
+-- it is restored to NOT NULL this check must start failing — that failure is
+-- the reminder, so change it here rather than deleting it.
+SELECT pg_temp.must_allow('signal with no forward test (temporary, migration 0006)',
+  $$insert into signals(id,group_id,strategy_id,symbol,side,entry_price,stop_loss,
+                        timeframe,valid_from,risk_profile,disclosure_block)
+    values ('80000000-0000-0000-0000-0000000000fe','60000000-0000-0000-0000-0000000000ff',
+            '50000000-0000-0000-0000-0000000000ff','NSE:INFY','BUY',100.0000,90.0000,
+            '1d',now(),'LOW','disclosure')$$);
+
+SELECT pg_temp.must_reject('signal with a non-positive entry price',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,
+                        timeframe,valid_from,risk_profile,disclosure_block)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:INFY','BUY',0,90.0000,'1d',now(),'LOW','disclosure')$$);
+
+SELECT pg_temp.must_reject('signal expiring before it becomes valid',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,valid_until,risk_profile,disclosure_block)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:INFY','BUY',100.0000,90.0000,'1d',now(),now() - interval '1 day',
+            'LOW','disclosure')$$);
+
+SELECT pg_temp.must_reject('targets stored as anything other than an array',
+  $$insert into signals(group_id,strategy_id,symbol,side,entry_price,stop_loss,timeframe,
+                        valid_from,risk_profile,disclosure_block,targets)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            'NSE:INFY','BUY',100.0000,90.0000,'1d',now(),'LOW','disclosure',
+            '{"t1":"345"}'::jsonb)$$);
+
+\echo '--- market_views: append-only, bounded, server-stamped ---'
+-- Backdated on purpose; the trigger must overwrite it, exactly as for signals.
+INSERT INTO market_views(id, group_id, stance, symbol, note, disclosure_block, published_at)
+VALUES ('90000000-0000-0000-0000-0000000000ff', '60000000-0000-0000-0000-0000000000ff',
+        'BULLISH', 'NSE:TATASTEEL', 'verification fixture', 'disclosure',
+        '2001-01-01'::timestamptz);
+
+DO $$
+DECLARE stamped timestamptz;
+BEGIN
+  SELECT published_at INTO stamped FROM market_views WHERE id='90000000-0000-0000-0000-0000000000ff';
+  IF stamped < now() - interval '1 hour' THEN
+    RAISE EXCEPTION 'INVARIANT BROKEN: a market view can be backdated.';
+  END IF;
+  RAISE NOTICE '  blocked   backdating a market view';
+END;
+$$;
+
+SELECT pg_temp.must_reject('UPDATE a published market view',
+  $$update market_views set stance='BEARISH' where id='90000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('DELETE a published market view',
+  $$delete from market_views where id='90000000-0000-0000-0000-0000000000ff'$$);
+
+-- The cap is what keeps this from being the free-form advice channel that
+-- x-wealth-product.md 8 cuts. If this check ever passes, it has become one.
+SELECT pg_temp.must_reject('a note longer than 280 characters',
+  $$insert into market_views(group_id,stance,note,disclosure_block)
+    values ('60000000-0000-0000-0000-0000000000ff','NEUTRAL',repeat('x',281),'disclosure')$$);
+SELECT pg_temp.must_reject('a whitespace-only note',
+  $$insert into market_views(group_id,stance,note,disclosure_block)
+    values ('60000000-0000-0000-0000-0000000000ff','NEUTRAL','   ','disclosure')$$);
+SELECT pg_temp.must_reject('an unqualified symbol on a market view',
+  $$insert into market_views(group_id,stance,symbol,disclosure_block)
+    values ('60000000-0000-0000-0000-0000000000ff','BEARISH','TATASTEEL','disclosure')$$);
+SELECT pg_temp.must_allow('a view about the market rather than one instrument',
+  $$insert into market_views(group_id,stance,disclosure_block)
+    values ('60000000-0000-0000-0000-0000000000ff','NEUTRAL','disclosure')$$);
+
+\echo '--- group_strategies: one live link, history kept ---'
+INSERT INTO group_strategies(id, group_id, strategy_id) VALUES
+  ('a1000000-0000-0000-0000-0000000000ff', '60000000-0000-0000-0000-0000000000ff',
+   '50000000-0000-0000-0000-0000000000ff');
+
+SELECT pg_temp.must_reject('publishing the same strategy to a group twice',
+  $$insert into group_strategies(group_id,strategy_id)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff')$$);
+SELECT pg_temp.must_reject('a link removed before it was published',
+  $$insert into group_strategies(group_id,strategy_id,published_at,removed_at)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff',
+            now(), now() - interval '1 day')$$);
+
+-- Withdrawing and re-publishing must work, and must leave the old row behind.
+UPDATE group_strategies SET removed_at = now()
+  WHERE id='a1000000-0000-0000-0000-0000000000ff';
+SELECT pg_temp.must_allow('re-publishing a withdrawn strategy',
+  $$insert into group_strategies(group_id,strategy_id)
+    values ('60000000-0000-0000-0000-0000000000ff','50000000-0000-0000-0000-0000000000ff')$$);
+
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM group_strategies
+   WHERE group_id='60000000-0000-0000-0000-0000000000ff';
+  IF n <> 2 THEN
+    RAISE EXCEPTION 'INVARIANT BROKEN: withdrawing a strategy erased the earlier link (found % rows).', n;
+  END IF;
+  RAISE NOTICE '  allowed   withdrawal keeps the earlier link as history';
+END;
+$$;
+
+\echo '--- subscriptions: one active membership per investor per group ---'
+INSERT INTO auth.users(id) VALUES ('00000000-0000-0000-0000-0000000000fe')
+  ON CONFLICT DO NOTHING;
+INSERT INTO investors(id, user_id) VALUES
+  ('e0000000-0000-0000-0000-0000000000ff', '00000000-0000-0000-0000-0000000000fe');
+INSERT INTO pricing_tiers(id, group_id, name, price_paise, billing_period) VALUES
+  ('d0000000-0000-0000-0000-0000000000ff', '60000000-0000-0000-0000-0000000000ff',
+   'Free', 0, 'MONTHLY');
+INSERT INTO subscriptions(id, investor_id, group_id, tier_id) VALUES
+  ('c1000000-0000-0000-0000-0000000000ff', 'e0000000-0000-0000-0000-0000000000ff',
+   '60000000-0000-0000-0000-0000000000ff', 'd0000000-0000-0000-0000-0000000000ff');
+
+SELECT pg_temp.must_reject('joining a group twice',
+  $$insert into subscriptions(investor_id,group_id,tier_id)
+    values ('e0000000-0000-0000-0000-0000000000ff','60000000-0000-0000-0000-0000000000ff',
+            'd0000000-0000-0000-0000-0000000000ff')$$);
+
+-- Leaving and rejoining is a normal thing to do, and the cancelled row stays.
+UPDATE subscriptions SET status='CANCELLED', ends_at=now()
+  WHERE id='c1000000-0000-0000-0000-0000000000ff';
+SELECT pg_temp.must_allow('rejoining after leaving',
+  $$insert into subscriptions(investor_id,group_id,tier_id)
+    values ('e0000000-0000-0000-0000-0000000000ff','60000000-0000-0000-0000-0000000000ff',
+            'd0000000-0000-0000-0000-0000000000ff')$$);
+
 \echo '--- soft-delete guard (5.1) ---'
 SELECT pg_temp.must_allow('assert_no_soft_delete_columns() on a clean schema',
   $$select assert_no_soft_delete_columns()$$);

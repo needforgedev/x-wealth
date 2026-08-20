@@ -110,6 +110,13 @@ export const riskProfile = pgEnum("risk_profile", ["LOW", "MEDIUM", "HIGH"]);
 
 export const marketSegment = pgEnum("market_segment", ["EQUITY", "FNO", "COMMODITY", "CURRENCY"]);
 
+/**
+ * A directional view, for `market_views`. A closed set on purpose — the whole
+ * reason a stance is safe to post without a forward test behind it is that it
+ * is not free text, and a free-text stance would make it one.
+ */
+export const marketStance = pgEnum("market_stance", ["BULLISH", "BEARISH", "NEUTRAL"]);
+
 // ---------------------------------------------------------------------------
 // Structured JSONB payloads
 // ---------------------------------------------------------------------------
@@ -149,6 +156,18 @@ export type CostsBreakdown = {
  * what a definition is.
  */
 export type { StrategyDefinition } from "@/domain/strategy";
+
+/**
+ * A staged exit on a trade call. Owned by `src/domain/signal.ts` and
+ * re-exported rather than restated, for the same reason as
+ * `StrategyDefinition` above: the column type and the validator must not be
+ * able to disagree about what a target is.
+ *
+ * `price` is a decimal string, not a number — it is an instrument price and
+ * the column beside it is `numeric(18,4)`, so routing it through a float on
+ * the way to JSON would silently round the figure an investor acts on.
+ */
+export type { SignalTarget } from "@/domain/signal";
 
 /**
  * Computed results. We report what happened and never characterise it — no

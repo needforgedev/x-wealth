@@ -37,7 +37,12 @@ const GROUPS: ScreenGroup[] = [
   {
     heading: "Groups",
     screens: [
-      { href: "/groups/traders-heaven", title: "Group Chat View", node: "14:1644" },
+      {
+        href: "/groups/traders-heaven",
+        title: "Group Chat View",
+        node: "14:1644",
+        note: "Artboard only — the working member view is /investor/groups/[id]",
+      },
       { href: "/groups/traders-heaven/thread", title: "Group Threads View", node: "15:3321" },
       { href: "/groups/traders-heaven/profile", title: "Group Profile View", node: "14:2127" },
       { href: "/groups/traders-heaven/payment", title: "Group Payment View", node: "15:2754" },
@@ -48,7 +53,12 @@ const GROUPS: ScreenGroup[] = [
   {
     heading: "Discovery & accounts",
     screens: [
-      { href: "/discover", title: "Group Discovery", node: "15:3520" },
+      {
+        href: "/discover",
+        title: "Group Discovery",
+        node: "15:3520",
+        note: "Artboard only — the working browse-and-join screen is /investor/discover",
+      },
       { href: "/discover/dimmed", title: "Group Discovery (dimmed)", node: "1788:2694", note: "Scrim only — the sheet it sat behind was never drawn" },
       { href: "/account/switch", title: "Switch Account", node: "1788:1381" },
       { href: "/account/choose", title: "Choose Account", node: "1788:1645" },
@@ -87,7 +97,7 @@ const ADVISOR_GROUPS: ScreenGroup[] = [
         href: "/advisor/create-group",
         title: "Create Group",
         node: "Advisor / Complete Profile (1050)",
-        note: "Built from the taller variant, which adds the tags and URL fields",
+        note: "Artboard only — the working form is /advisor/groups/new",
       },
       { href: "/advisor/pricing", title: "Pricing Tiers", node: "Advisor / Complete Profile (715)" },
     ],
@@ -106,7 +116,7 @@ const ADVISOR_GROUPS: ScreenGroup[] = [
         href: "/advisor/groups/traders-heaven",
         title: "Group Chat View",
         node: "Advisor / Group Chat View",
-        note: "The + in the composer opens the Send Signal sheet",
+        note: "Artboard only — the working screen is /advisor/groups/[id]/manage",
       },
       {
         href: "/advisor/groups/traders-heaven/members",
