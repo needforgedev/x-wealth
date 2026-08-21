@@ -47,6 +47,8 @@ export type KycInput = {
   raasbEnlistmentNo: string;
   firmName: string;
   mcaNo: string;
+  /** `YYYY-MM-DD`, read off the certificate. */
+  registrationValidUntil: string;
   documentType: string;
   /** Simulated for now — W1-19 wires real uploads to a private bucket. */
   documentAttached: boolean;
@@ -63,6 +65,17 @@ export async function submitKyc(input: KycInput): Promise<ActionResult> {
   }
   if (raasb.length < 3) return { ok: false, error: "Enter your RAASB enlistment number." };
   if (firm.length < 2) return { ok: false, error: "Enter your firm name." };
+
+  // Declared here rather than only at review, so ops cross-checks a date the
+  // advisor has stated against the SEBI register instead of inventing one.
+  const validUntil = new Date(`${input.registrationValidUntil}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.registrationValidUntil) || Number.isNaN(validUntil.getTime())) {
+    return { ok: false, error: "Enter the date your registration is valid until." };
+  }
+  if (validUntil.getTime() <= Date.now()) {
+    return { ok: false, error: "That date has already passed — enter a current registration." };
+  }
+
   if (!input.documentAttached) {
     return { ok: false, error: "Attach your registration certificate." };
   }
@@ -85,6 +98,9 @@ export async function submitKyc(input: KycInput): Promise<ActionResult> {
           raasbEnlistmentNo: raasb,
           firmName: firm,
           mcaNo: input.mcaNo.trim() || null,
+          // Unlocks nothing on its own: the gate needs VERIFIED as well, and
+          // only ops can set that — it confirms or corrects this date there.
+          registrationValidUntil: validUntil,
           verificationStatus: "PENDING",
           updatedAt: new Date(),
         })

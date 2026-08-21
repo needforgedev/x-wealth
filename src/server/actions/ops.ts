@@ -25,6 +25,8 @@ export type PendingAdvisor = {
   sebiRegistrationNo: string | null;
   raasbEnlistmentNo: string | null;
   mcaNo: string | null;
+  /** What the advisor declared at KYC. Ops confirms or corrects it on approval. */
+  registrationValidUntil: Date | null;
   submittedAt: Date | null;
 };
 
@@ -42,6 +44,7 @@ export async function listForReview(): Promise<
         sebiRegistrationNo: advisors.sebiRegistrationNo,
         raasbEnlistmentNo: advisors.raasbEnlistmentNo,
         mcaNo: advisors.mcaNo,
+        registrationValidUntil: advisors.registrationValidUntil,
         submittedAt: advisors.updatedAt,
         status: advisors.verificationStatus,
       })

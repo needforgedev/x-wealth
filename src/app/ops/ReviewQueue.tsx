@@ -77,7 +77,13 @@ function ReviewCard({ advisor }: { advisor: PendingAdvisor }) {
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  // Seeded with what the advisor declared at KYC, so approving is a cross-check
+  // against the SEBI register rather than a date typed from nothing. Ops can
+  // still correct it — the value written here is the one the gate reads.
   const [validUntil, setValidUntil] = useState(() => {
+    if (advisor.registrationValidUntil) {
+      return new Date(advisor.registrationValidUntil).toISOString().slice(0, 10);
+    }
     const d = new Date();
     d.setFullYear(d.getFullYear() + 1);
     return d.toISOString().slice(0, 10);
@@ -106,6 +112,14 @@ function ReviewCard({ advisor }: { advisor: PendingAdvisor }) {
         <Row label="SEBI registration" value={advisor.sebiRegistrationNo} />
         <Row label="RAASB enlistment" value={advisor.raasbEnlistmentNo} />
         <Row label="MCA" value={advisor.mcaNo} />
+        <Row
+          label="Declared expiry"
+          value={
+            advisor.registrationValidUntil
+              ? new Date(advisor.registrationValidUntil).toISOString().slice(0, 10)
+              : null
+          }
+        />
       </dl>
 
       {rejecting ? (

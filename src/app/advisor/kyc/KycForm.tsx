@@ -24,6 +24,12 @@ export function KycForm() {
   const [raasb, setRaasb] = useState("");
   const [firm, setFirm] = useState("");
   const [mca, setMca] = useState("");
+  const [validUntil, setValidUntil] = useState("");
+  // Lazily, once: reading the clock during render is impure and re-renders
+  // would make the floor drift under the picker.
+  const [earliestValidUntil] = useState(() =>
+    new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+  );
   const [attached, setAttached] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,6 +42,7 @@ export function KycForm() {
       raasbEnlistmentNo: raasb,
       firmName: firm,
       mcaNo: mca,
+      registrationValidUntil: validUntil,
       documentType: "SEBI_REGISTRATION_CERTIFICATE",
       documentAttached: attached,
     });
@@ -82,6 +89,13 @@ export function KycForm() {
             placeholder="Optional"
             value={mca}
             onChange={(e) => setMca(e.target.value)}
+          />
+          <TextField
+            label="Registration valid until"
+            type="date"
+            value={validUntil}
+            onChange={(e) => setValidUntil(e.target.value)}
+            min={earliestValidUntil}
           />
 
           <UploadField

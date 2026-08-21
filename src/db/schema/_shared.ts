@@ -135,32 +135,22 @@ export const invitationStatus = pgEnum("invitation_status", [
 // ---------------------------------------------------------------------------
 
 /**
- * The cost model applied to a run. Every field is required — there is no code
- * path that produces a gross-return figure, and no `include_costs` flag exists
- * anywhere in this system by design (`x-wealth-product.md` §5.3).
+ * The cost model applied to a run, and the per-trade breakdown it produces.
+ *
+ * Owned by `src/domain/costs.ts` and re-exported rather than restated, for the
+ * same reason as `StrategyDefinition` below: the column type and the
+ * calculator must not be able to disagree about what a cost model is.
+ *
+ * Each statutory charge carries the side it is levied on, because the Indian
+ * structure is asymmetric — STT is charged on both legs of a delivery trade
+ * but only the sell of an intraday one, and stamp duty is buy-side only. A
+ * flat `sttPercent` with the side rule living in code would mean a stored
+ * model did not determine what was charged, which defeats the point of storing
+ * it (`x-wealth-product.md` §5.3, PRD §5.3 on reproducible methodology).
+ *
+ * There is no `include_costs` flag anywhere in this system, by design.
  */
-export type CostModel = {
-  brokerage: { type: "PERCENT" | "FLAT_PAISE"; value: number; capPaise?: number };
-  sttPercent: number;
-  stampDutyPercent: number;
-  exchangeTransactionPercent: number;
-  sebiTurnoverPercent: number;
-  gstPercent: number;
-  /** Stated assumption, disclosed with every result. */
-  slippagePercent: number;
-};
-
-/** Per-trade breakdown of the above, in paise. */
-export type CostsBreakdown = {
-  brokeragePaise: number;
-  sttPaise: number;
-  stampDutyPaise: number;
-  exchangeTransactionPaise: number;
-  sebiTurnoverPaise: number;
-  gstPaise: number;
-  slippagePaise: number;
-  totalPaise: number;
-};
+export type { CostModel, CostsBreakdown } from "@/domain/costs";
 
 /**
  * A strategy definition is structured data, never code (`x-wealth-product.md`
