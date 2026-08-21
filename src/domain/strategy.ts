@@ -1,3 +1,4 @@
+import { warmUpBars } from "./indicators";
 import { isSymbol } from "./symbol";
 
 /**
@@ -58,6 +59,31 @@ export const LIMITS = {
 
 export type ValidationIssue = { field: string; message: string };
 
+/**
+ * One instrument the engine can actually run against.
+ *
+ * A definition is validated in two stages, and this is the second. The first —
+ * shape, bounds, self-contradiction — needs nothing but the definition, and
+ * runs anywhere. The second needs to know what has been loaded, which is a fact
+ * about the database on a particular day.
+ *
+ * Passing the catalogue in, rather than importing it, keeps this module pure
+ * and testable without a connection. `x-wealth-product.md` §6 wants a
+ * definition to be replayable years later; a validator that reached for a live
+ * table could not be reasoned about at all.
+ */
+export type InstrumentChoice = {
+  symbol: string;
+  name: string;
+  /**
+   * False for a spot index. You can write a strategy *on* NIFTY 50 — but the
+   * entry action here is "buy", and there is nothing to buy.
+   */
+  tradeable: boolean;
+  /** Sessions loaded. Determines whether an indicator can ever warm up. */
+  barCount: number;
+};
+
 function checkOperand(operand: Operand, field: string, issues: ValidationIssue[]): void {
   if (operand.kind === "PRICE") return;
 
@@ -82,6 +108,46 @@ function checkOperand(operand: Operand, field: string, issues: ValidationIssue[]
       message: `Period must be between ${LIMITS.period.min} and ${LIMITS.period.max}.`,
     });
   }
+}
+
+/**
+ * What an operand's numbers mean.
+ *
+ * A price and an RSI are both "numbers" and comparing them is nonsense: RSI is
+ * bounded 0–100, a price is rupees, and `RSI(14) ABOVE PRICE` would evaluate to
+ * false on every session an instrument traded above ₹100 — a backtest with no
+ * trades, which reads as a finding about the strategy rather than as a
+ * meaningless rule.
+ *
+ * A CONSTANT has no space of its own. It borrows the other side's: `30` means
+ * ₹30 against a price and an RSI level of 30 against an oscillator.
+ */
+export type OperandSpace = "PRICE" | "OSCILLATOR";
+
+export function operandSpace(operand: Operand): OperandSpace | null {
+  switch (operand.kind) {
+    case "CONSTANT":
+      return null; // borrows from the other side
+    case "RSI":
+      return "OSCILLATOR";
+    default:
+      return "PRICE"; // PRICE, SMA and EMA are all derived from the close
+  }
+}
+
+/**
+ * The space a condition is compared in, or null if the two sides disagree.
+ *
+ * Exported because the engine needs the same answer the validator reached: it
+ * has to know whether to read a constant as rupees or as a level, and the two
+ * must never disagree about it.
+ */
+export function comparisonSpace(condition: Condition): OperandSpace | null {
+  const left = operandSpace(condition.left);
+  const right = operandSpace(condition.right);
+  if (left === null) return right;
+  if (right === null) return left;
+  return left === right ? left : null;
 }
 
 function describeOperandKey(operand: Operand): string {
@@ -113,7 +179,38 @@ function checkCondition(condition: Condition, field: string, issues: ValidationI
   // Comparing two constants is not a market condition at all.
   if (condition.left.kind === "CONSTANT" && condition.right.kind === "CONSTANT") {
     issues.push({ field, message: "At least one side must be an indicator or the price." });
+    return;
   }
+
+  // An oscillator against a price compares two different kinds of number. It
+  // evaluates without error and answers the same way every session, which is
+  // the worst possible failure: a backtest that runs and means nothing.
+  if (comparisonSpace(condition) === null) {
+    issues.push({
+      field,
+      message: "RSI is a 0–100 reading and cannot be compared with a price. Compare it with a number, or compare prices with prices.",
+    });
+  }
+}
+
+/**
+ * The longest warm-up any operand in the definition needs.
+ *
+ * An SMA(200) produces nothing for its first two hundred sessions, so a
+ * strategy carrying one cannot trade until then. Exported because the engine
+ * needs the same number to size its data request — `backtest_runs.period_start`
+ * is the period being *reported*, not the period being *read*.
+ */
+export function requiredWarmUpBars(definition: StrategyDefinition): number {
+  let longest = 0;
+  for (const condition of [definition.entry, definition.exit]) {
+    for (const operand of [condition.left, condition.right]) {
+      if (operand.kind === "PRICE" || operand.kind === "CONSTANT") continue;
+      if (!Number.isInteger(operand.period) || operand.period < 1) continue;
+      longest = Math.max(longest, warmUpBars(operand.kind, operand.period));
+    }
+  }
+  return longest;
 }
 
 /**
@@ -122,8 +219,16 @@ function checkCondition(condition: Condition, field: string, issues: ValidationI
  *
  * The point is to fail at authoring time with a sentence a human can act on,
  * rather than at run time with an empty trade log that looks like a result.
+ *
+ * `catalogue` is optional. Without it this checks everything that is true of a
+ * definition on its own; with it, it also checks the things that are only true
+ * of a definition *here, today* — that the instruments exist, that they can be
+ * traded, and that enough history is loaded for the indicators to warm up.
  */
-export function validateStrategyDefinition(definition: StrategyDefinition): ValidationIssue[] {
+export function validateStrategyDefinition(
+  definition: StrategyDefinition,
+  catalogue?: readonly InstrumentChoice[],
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   if (definition.version !== 1) {
@@ -156,6 +261,40 @@ export function validateStrategyDefinition(definition: StrategyDefinition): Vali
     issues.push({ field: "instruments", message: "The same instrument is listed twice." });
   }
 
+  if (catalogue) {
+    const known = new Map(catalogue.map((choice) => [choice.symbol, choice]));
+    const warmUp = requiredWarmUpBars(definition);
+
+    for (const symbol of instruments) {
+      const choice = known.get(symbol);
+
+      if (!choice) {
+        // Shape alone is not enough. `NSE:FOO` is a well-formed symbol and a
+        // strategy built on it would author cleanly, then fail inside the
+        // engine — or worse, produce nothing and read as a finding.
+        issues.push({
+          field: "instruments",
+          message: `${symbol} has no price history loaded, so it cannot be backtested.`,
+        });
+        continue;
+      }
+
+      if (!choice.tradeable) {
+        issues.push({
+          field: "instruments",
+          message: `${choice.name} is an index — it has a price but nothing to buy. Use a stock, or a derivative on it once those are supported.`,
+        });
+      }
+
+      if (warmUp > 0 && choice.barCount <= warmUp) {
+        issues.push({
+          field: "instruments",
+          message: `${choice.name} has ${choice.barCount} sessions loaded, and these rules need ${warmUp} before they produce a first signal.`,
+        });
+      }
+    }
+  }
+
   checkCondition(definition.entry, "entry", issues);
   checkCondition(definition.exit, "exit", issues);
 
@@ -183,8 +322,11 @@ export function validateStrategyDefinition(definition: StrategyDefinition): Vali
   return issues;
 }
 
-export function isEvaluatable(definition: StrategyDefinition): boolean {
-  return validateStrategyDefinition(definition).length === 0;
+export function isEvaluatable(
+  definition: StrategyDefinition,
+  catalogue?: readonly InstrumentChoice[],
+): boolean {
+  return validateStrategyDefinition(definition, catalogue).length === 0;
 }
 
 // ---------------------------------------------------------------------------

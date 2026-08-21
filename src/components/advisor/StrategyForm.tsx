@@ -3,15 +3,16 @@
 import { useState, type ReactNode } from "react";
 
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
-import { isSymbol } from "@/domain/symbol";
 import {
   COMPARATORS,
   COMPARATOR_LABELS,
   INDICATORS,
   describeCondition,
+  requiredWarmUpBars,
   validateStrategyDefinition,
   type Comparator,
   type Condition,
+  type InstrumentChoice,
   type Operand,
   type StrategyDefinition,
 } from "@/domain/strategy";
@@ -152,6 +153,7 @@ export type StrategyFormValues = {
 export function StrategyForm({
   initial,
   submitLabel,
+  catalogue,
   showIdentity = true,
   changeNote,
   onChangeNote,
@@ -159,6 +161,11 @@ export function StrategyForm({
 }: {
   initial: StrategyFormValues;
   submitLabel: string;
+  /**
+   * What actually has price history loaded. Fetched by the page, server-side —
+   * an advisor cannot pick an instrument the engine could not run.
+   */
+  catalogue: readonly InstrumentChoice[];
   /** A revision keeps the strategy's name and description. */
   showIdentity?: boolean;
   changeNote?: string;
@@ -166,7 +173,6 @@ export function StrategyForm({
   onSubmit: (values: StrategyFormValues) => Promise<string | null>;
 }) {
   const [values, setValues] = useState(initial);
-  const [symbolDraft, setSymbolDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -174,23 +180,17 @@ export function StrategyForm({
   const setDef = (patch: Partial<StrategyDefinition>) =>
     setValues((v) => ({ ...v, definition: { ...v.definition, ...patch } }));
 
-  const addSymbol = () => {
-    const symbol = symbolDraft.trim().toUpperCase();
-    if (!symbol) return;
-    if (!isSymbol(symbol)) {
-      setError(`"${symbol}" needs an exchange prefix — e.g. NSE:RELIANCE.`);
-      return;
-    }
-    if (def.instruments.includes(symbol)) {
-      setError("That instrument is already on the list.");
-      return;
-    }
+  const toggleSymbol = (symbol: string) => {
     setError(null);
-    setDef({ instruments: [...def.instruments, symbol] });
-    setSymbolDraft("");
+    setDef({
+      instruments: def.instruments.includes(symbol)
+        ? def.instruments.filter((s) => s !== symbol)
+        : [...def.instruments, symbol],
+    });
   };
 
-  const issues = validateStrategyDefinition(def);
+  const warmUp = requiredWarmUpBars(def);
+  const issues = validateStrategyDefinition(def, catalogue);
 
   const submit = async () => {
     setError(null);
@@ -242,47 +242,61 @@ export function StrategyForm({
 
       <Field
         label="Instruments"
-        hint="Exchange-qualified, e.g. NSE:RELIANCE. There is no instrument master yet — that arrives with the data layer."
+        hint={
+          warmUp > 0
+            ? `These rules need ${warmUp} sessions of history before the first signal.`
+            : "Only instruments with price history loaded can be backtested."
+        }
       >
-        <div className="flex gap-2">
-          <input
-            value={symbolDraft}
-            onChange={(e) => setSymbolDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addSymbol();
-              }
-            }}
-            placeholder="NSE:RELIANCE"
-            className={input}
-          />
-          <button
-            type="button"
-            onClick={addSymbol}
-            className="h-[44px] shrink-0 rounded-[4px] border border-line px-4 text-[14px] font-semibold text-ink"
-          >
-            Add
-          </button>
-        </div>
+        {catalogue.length === 0 ? (
+          <p className="rounded-[6px] bg-surface-alt p-3 text-[13px] text-muted">
+            No price history is loaded yet. Run{" "}
+            <code className="text-ink">npm run load-market-data</code> before authoring a strategy.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {catalogue.map((choice) => {
+              const selected = def.instruments.includes(choice.symbol);
+              const tooShort = warmUp > 0 && choice.barCount <= warmUp;
+              // An index has a price and nothing to buy; too little history
+              // means the rules can never produce a first signal. Both are
+              // shown as the reason rather than as a silent absence.
+              const blocked = !choice.tradeable || tooShort;
 
-        {def.instruments.length > 0 && (
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {def.instruments.map((symbol) => (
-              <li key={symbol}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDef({ instruments: def.instruments.filter((s) => s !== symbol) })
-                  }
-                  className="flex h-[32px] items-center gap-2 rounded-[4px] border border-brand bg-brand/[0.08] px-3 text-[13px] font-medium text-brand"
-                >
-                  {symbol}
-                  <span aria-hidden>×</span>
-                  <span className="sr-only">Remove</span>
-                </button>
-              </li>
-            ))}
+              return (
+                <li key={choice.symbol}>
+                  <button
+                    type="button"
+                    disabled={blocked && !selected}
+                    onClick={() => toggleSymbol(choice.symbol)}
+                    aria-pressed={selected}
+                    className={`flex w-full items-center gap-3 rounded-[6px] border px-3 py-[10px] text-left ${
+                      selected ? "border-brand bg-brand/[0.06]" : "border-line"
+                    } ${blocked && !selected ? "opacity-45" : ""}`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[3px] border text-[11px] font-bold ${
+                        selected ? "border-brand bg-brand text-white" : "border-line text-transparent"
+                      }`}
+                    >
+                      ✓
+                    </span>
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-medium text-ink">
+                        {choice.name}
+                      </span>
+                      <span className="block text-[12px] text-muted">
+                        {choice.symbol} · {choice.barCount.toLocaleString("en-IN")} sessions
+                        {!choice.tradeable && " · index, nothing to buy"}
+                        {choice.tradeable && tooShort && " · not enough history for these rules"}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Field>

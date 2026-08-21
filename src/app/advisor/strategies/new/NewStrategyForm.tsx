@@ -3,15 +3,16 @@
 import { useRouter } from "next/navigation";
 
 import { StrategyForm } from "@/components/advisor/StrategyForm";
-import { starterDefinition } from "@/domain/strategy";
+import { starterDefinition, type InstrumentChoice } from "@/domain/strategy";
 import { createStrategy } from "@/server/actions/strategy";
 
-export function NewStrategyForm() {
+export function NewStrategyForm({ catalogue }: { catalogue: InstrumentChoice[] }) {
   const router = useRouter();
 
   return (
     <StrategyForm
       submitLabel="Save strategy"
+      catalogue={catalogue}
       initial={{
         name: "",
         description: "",

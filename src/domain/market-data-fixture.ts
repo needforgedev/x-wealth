@@ -149,6 +149,7 @@ export function fixtureSource(input: FixtureInput): MarketDataSource {
     instruments.push({
       symbol,
       name: overrides.name ?? symbol,
+      kind: overrides.kind ?? "EQUITY",
       lotSize: overrides.lotSize ?? 1,
       tickSize: overrides.tickSize ?? NSE_EQUITY_TICK,
     });

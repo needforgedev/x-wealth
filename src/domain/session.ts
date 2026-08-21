@@ -30,6 +30,21 @@ export type IsoDate = string; // YYYY-MM-DD
 export type TradingCalendar = {
   readonly name: string;
   readonly holidays: ReadonlySet<IsoDate>;
+
+  /**
+   * Weekend dates the exchange nonetheless traded on.
+   *
+   * Not a curiosity — NSE and BSE hold several a year, and each one is a real
+   * session with real prices. Diwali Muhurat trading falls on whatever day
+   * Diwali does, including Sunday; the Union Budget is traded on the 1st of
+   * February whether or not it is a weekend; and the exchanges run occasional
+   * Saturday sessions to test their disaster-recovery site.
+   *
+   * A calendar without this rejects genuine bars. That is not theoretical: the
+   * first backfill of the six-instrument universe surfaced six such dates
+   * between 2023 and 2026, and `assertValidSeries` refused all of it.
+   */
+  readonly specialSessions?: ReadonlySet<IsoDate>;
 };
 
 export class SessionError extends Error {}
@@ -52,6 +67,23 @@ export const PLACEHOLDER_CALENDAR_2026: TradingCalendar = {
     "2026-01-26", // Republic Day
     "2026-08-15", // Independence Day
     "2026-10-02", // Gandhi Jayanti
+  ]),
+
+  /**
+   * These, unlike the holidays above, are not guesses.
+   *
+   * Every one was observed as a real bar in Upstox's series for the loaded
+   * universe — the exchange printed prices, so the session happened. Kept as
+   * evidence rather than as a placeholder; the official circular will add to
+   * this list, not correct it.
+   */
+  specialSessions: new Set<IsoDate>([
+    "2023-11-12", // Sunday — Diwali Muhurat trading
+    "2024-01-20", // Saturday — special live session, disaster-recovery test
+    "2024-03-02", // Saturday — special live session, disaster-recovery test
+    "2024-05-18", // Saturday — special live session, disaster-recovery test
+    "2025-02-01", // Saturday — Union Budget
+    "2026-02-01", // Sunday — Union Budget
   ]),
 };
 
@@ -98,7 +130,15 @@ export function isHoliday(date: IsoDate, calendar: TradingCalendar): boolean {
   return calendar.holidays.has(date);
 }
 
+/**
+ * A special session wins over both the weekend rule and the holiday list.
+ *
+ * The exchange either traded that day or it did not, and a date the exchange
+ * traded is a session however the general rules would classify it.
+ */
 export function isTradingSession(date: IsoDate, calendar: TradingCalendar): boolean {
+  assertIsoDate(date);
+  if (calendar.specialSessions?.has(date)) return true;
   return !isWeekend(date) && !isHoliday(date, calendar);
 }
 

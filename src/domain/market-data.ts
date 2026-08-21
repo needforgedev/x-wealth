@@ -83,15 +83,38 @@ export type SourceMetadata = {
   readonly vintage: IsoDate;
 };
 
-/** What can be traded, and in what increments. */
+/**
+ * What an instrument is, and therefore what may be done with it.
+ *
+ * A spot index has a price and no way to buy it. The engine needs index series
+ * — a strategy on NIFTY 50 is an ordinary thing to write — but it must not be
+ * able to fill a trade on one, so the distinction is in the type rather than in
+ * a convention about naming.
+ */
+export type InstrumentKind = "EQUITY" | "INDEX";
+
+/** What has a price, and — if it can be traded at all — in what increments. */
 export type Instrument = {
   readonly symbol: Symbol_;
   readonly name: string;
+  readonly kind: InstrumentKind;
   /** 1 for cash equities; derivatives trade in lots (`x-wealth-product.md` §10). */
   readonly lotSize: number;
   /** Smallest permitted price increment — ₹0.05 on most NSE equities. */
   readonly tickSize: PriceTicks;
 };
+
+/**
+ * Can an order be placed on this at all?
+ *
+ * Reads as a triviality now, with two kinds. It exists so that the check the
+ * engine performs is a named question rather than an inline `=== "INDEX"`,
+ * which is the form that gets copied and then forgotten when derivatives
+ * arrive and the answer stops being a single comparison.
+ */
+export function isTradeable(instrument: Instrument): boolean {
+  return instrument.kind !== "INDEX";
+}
 
 export interface MarketDataSource {
   readonly metadata: SourceMetadata;

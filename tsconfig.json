@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // scripts/*.ts run under bare `node`, which strips types but resolves like
+    // ESM — so their relative imports must carry the real `.ts` extension.
+    // Harmless for the app: `noEmit` is on, so nothing is ever rewritten.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

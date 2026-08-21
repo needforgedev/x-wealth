@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { StrategyForm } from "@/components/advisor/StrategyForm";
-import type { StrategyDefinition } from "@/domain/strategy";
+import type { InstrumentChoice, StrategyDefinition } from "@/domain/strategy";
 import { reviseStrategy } from "@/server/actions/strategy";
 
 export function ReviseForm({
@@ -13,12 +13,14 @@ export function ReviseForm({
   description,
   hypothesis,
   definition,
+  catalogue,
 }: {
   strategyId: string;
   name: string;
   description: string;
   hypothesis: string;
   definition: StrategyDefinition;
+  catalogue: InstrumentChoice[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -45,6 +47,7 @@ export function ReviseForm({
       <StrategyForm
         showIdentity={false}
         submitLabel="Save new version"
+        catalogue={catalogue}
         changeNote={changeNote}
         onChangeNote={setChangeNote}
         initial={{ name, description, hypothesis, definition }}

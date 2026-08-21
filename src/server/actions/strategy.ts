@@ -10,6 +10,7 @@ import {
   validateStrategyDefinition,
   type StrategyDefinition,
 } from "@/domain/strategy";
+import { loadCatalogue } from "@/server/market-data/catalogue";
 import { NotAuthorisedError, requirePublishingRights } from "@/server/identity";
 import type { ActionResult } from "@/server/actions/auth";
 
@@ -24,6 +25,14 @@ import type { ActionResult } from "@/server/actions/auth";
  *   pointing at its parent; nothing ever updates a version. The database
  *   enforces this with a trigger, so a mistake here fails loudly rather than
  *   quietly rewriting history.
+ *
+ * Both actions validate the definition against the live instrument catalogue,
+ * not just against its own shape. The picker in the builder already restricts
+ * the choice, but a Server Action runs as a POST against the page and is
+ * reachable by anyone who can send that request — render-time gating is not a
+ * security boundary. More practically: the catalogue changes when the loader
+ * runs, so a definition that was valid when the form was rendered may not be
+ * by the time it is submitted.
  */
 
 export async function createStrategy(input: {
@@ -43,11 +52,11 @@ export async function createStrategy(input: {
     };
   }
 
-  const issues = validateStrategyDefinition(input.definition);
-  if (issues.length > 0) return { ok: false, error: issues[0].message };
-
   try {
     const { advisor } = await requirePublishingRights();
+
+    const issues = validateStrategyDefinition(input.definition, await loadCatalogue());
+    if (issues.length > 0) return { ok: false, error: issues[0].message };
 
     const strategyId = await db().transaction(async (tx) => {
       const [strategy] = await tx
@@ -104,11 +113,11 @@ export async function reviseStrategy(input: {
   const hypothesis = input.hypothesis.trim();
   if (hypothesis.length < 10) return { ok: false, error: "Write the hypothesis for this version." };
 
-  const issues = validateStrategyDefinition(input.definition);
-  if (issues.length > 0) return { ok: false, error: issues[0].message };
-
   try {
     const { advisor } = await requirePublishingRights();
+
+    const issues = validateStrategyDefinition(input.definition, await loadCatalogue());
+    if (issues.length > 0) return { ok: false, error: issues[0].message };
 
     const result = await db().transaction(async (tx) => {
       const [strategy] = await tx

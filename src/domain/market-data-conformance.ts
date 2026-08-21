@@ -51,6 +51,9 @@ export async function conformanceViolations(
     if (!Number.isInteger(instrument.tickSize) || instrument.tickSize <= 0) {
       note(`${instrument.symbol}: tickSize must be a positive whole number of ticks`);
     }
+    if (instrument.kind !== "EQUITY" && instrument.kind !== "INDEX") {
+      note(`${instrument.symbol}: kind is "${instrument.kind}"`);
+    }
   }
   if (!instruments.some((i) => i.symbol === symbol)) {
     note(`${symbol} has bars but is missing from instruments()`);

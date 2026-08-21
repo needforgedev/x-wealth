@@ -1,4 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AppBar } from "@/components/AppBar";
@@ -7,8 +8,11 @@ import { db } from "@/db";
 import { strategies, strategyVersions } from "@/db/schema";
 import { registrationGate } from "@/domain/registration-gate";
 import { describeCondition, type StrategyDefinition } from "@/domain/strategy";
+import { loadCatalogue } from "@/server/market-data/catalogue";
+import { listRunsForStrategy } from "@/server/queries/backtest";
 import { currentIdentity } from "@/server/identity";
 import { ReviseForm } from "./ReviseForm";
+import { RunBacktest } from "./RunBacktest";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +45,17 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
     .orderBy(asc(strategyVersions.versionNo));
 
   const head = versions.at(-1);
+  const [catalogue, runs] = await Promise.all([
+    loadCatalogue(),
+    listRunsForStrategy(strategy.id, identity.advisor.id),
+  ]);
+
+  const runsByVersion = new Map<number, typeof runs>();
+  for (const entry of runs) {
+    const existing = runsByVersion.get(entry.versionNo);
+    if (existing) existing.push(entry);
+    else runsByVersion.set(entry.versionNo, [entry]);
+  }
 
   return (
     <AppShell>
@@ -88,6 +103,48 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
                   <Row label="Position size" value={`${definition.positionSizePercent}%`} />
                   <Row label="Instruments" value={definition.instruments.join(", ")} />
                 </dl>
+
+                {/* Every run for this version, newest first. There is no filter
+                    and no way to hide one — that is the iteration ledger. */}
+                {runsByVersion.get(version.versionNo)?.map(({ run }) => {
+                  const results = run.results as unknown as {
+                    netReturnPercent: number;
+                    tradeCount: number;
+                    maxDrawdownPercent: number;
+                  };
+                  return (
+                    <Link
+                      key={run.id}
+                      href={`/advisor/backtests/${run.id}`}
+                      className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-[6px] bg-surface-alt px-3 py-2 text-[13px]"
+                    >
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          results.netReturnPercent >= 0 ? "text-ink" : "text-danger-ink"
+                        }`}
+                      >
+                        {results.netReturnPercent >= 0 ? "+" : ""}
+                        {results.netReturnPercent.toFixed(2)}% net
+                      </span>
+                      <span className="text-muted">{results.tradeCount} trades</span>
+                      <span className="text-muted">
+                        −{results.maxDrawdownPercent.toFixed(1)}% drawdown
+                      </span>
+                      <span className="ml-auto text-[12px] text-muted">
+                        {run.createdAt.toISOString().slice(0, 10)}
+                      </span>
+                    </Link>
+                  );
+                })}
+
+                {isHead && (
+                  <div className="mt-3">
+                    <RunBacktest
+                      versionId={version.id}
+                      runCount={runsByVersion.get(version.versionNo)?.length ?? 0}
+                    />
+                  </div>
+                )}
               </li>
             );
           })}
@@ -101,14 +158,15 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
               description={strategy.description ?? ""}
               hypothesis={head.hypothesisText ?? ""}
               definition={head.definition as StrategyDefinition}
+              catalogue={catalogue}
             />
           </div>
         )}
 
         <p className="mt-8 rounded-[6px] bg-surface-alt p-4 text-[13px] text-muted">
-          Next: backtest this version with a mandatory cost model, then declare a hypothesis and
-          lock parameters for a fixed forward-test window. Both need a market data source — blocker
-          B-1.
+          A backtest is a statement about data that was already known when the rules were written.
+          The forward test — declared hypothesis, locked parameters, a fixed window — is what the
+          record is actually built on, and it is W6.
         </p>
       </div>
     </AppShell>

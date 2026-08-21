@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
 import { registrationGate } from "@/domain/registration-gate";
+import { loadCatalogue } from "@/server/market-data/catalogue";
 import { currentIdentity } from "@/server/identity";
 import { NewStrategyForm } from "./NewStrategyForm";
 
@@ -12,6 +13,10 @@ export default async function NewStrategyPage() {
   const identity = await currentIdentity();
   if (!identity?.advisor) redirect("/");
   if (!registrationGate(identity.advisor).allowed) redirect("/advisor/status");
+
+  // Fetched here rather than from the client: a Server Component read is one
+  // less roundtrip, and the same list is what the action validates against.
+  const catalogue = await loadCatalogue();
 
   return (
     <AppShell>
@@ -23,7 +28,7 @@ export default async function NewStrategyPage() {
           exists — that ordering is the point.
         </p>
         <div className="mt-6">
-          <NewStrategyForm />
+          <NewStrategyForm catalogue={catalogue} />
         </div>
       </div>
     </AppShell>

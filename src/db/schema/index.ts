@@ -20,6 +20,11 @@
  *     note, append-only and disclosure-bearing. If anyone ever relaxes those
  *     three constraints, it has become the thing this line forbids.
  *   - a wallet, ledger of custodied funds, or broker order record
+ *
+ * `instruments` and `daily_bars` are deliberately NOT append-only. They record
+ * the world rather than a decision, and vendors restate history when they
+ * correct a corporate action. What is immutable is each run's claim about the
+ * data it read, which lives in `backtest_runs.methodology`.
  */
 
 export * from "./_shared";
@@ -32,4 +37,5 @@ export * from "./critiques";
 export * from "./investors";
 export * from "./distribution";
 export * from "./portfolio";
+export * from "./market-data";
 export * from "./audit";

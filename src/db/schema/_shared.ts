@@ -88,6 +88,25 @@ export const forwardTestOutcome = pgEnum("forward_test_outcome", ["COMPLETED", "
 
 export const tradeSide = pgEnum("trade_side", ["BUY", "SELL"]);
 
+/**
+ * Whether a stored price series has been corrected for splits, bonuses and
+ * dividends. Mirrors `PriceAdjustment` in `src/domain/market-data.ts`.
+ *
+ * `UNADJUSTED` is expressible rather than forbidden: some vendors sell raw
+ * series and `x-wealth-product.md` §10 permits using them provided the run says
+ * so. This column is that disclosure, and it travels with every bar.
+ */
+export const priceAdjustment = pgEnum("price_adjustment", ["ADJUSTED", "UNADJUSTED"]);
+
+/**
+ * What an instrument is, and therefore what may be done with it.
+ *
+ * A spot index cannot be bought. Modelling it as an instrument without saying
+ * so lets the engine "fill" a trade on NIFTY 50 at its spot price — a number
+ * that looks entirely ordinary and describes a trade nobody could place.
+ */
+export const instrumentKind = pgEnum("instrument_kind", ["EQUITY", "INDEX"]);
+
 export const groupVisibility = pgEnum("group_visibility", ["PUBLIC", "PRIVATE"]);
 
 export const billingPeriod = pgEnum("billing_period", ["MONTHLY", "QUARTERLY", "ANNUAL"]);

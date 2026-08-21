@@ -16,7 +16,9 @@
     "db:inventory": "node scripts/db-verify.mjs --inventory-only",
     "db:studio": "drizzle-kit studio",
     "db:check": "drizzle-kit check",
-    "grant-admin": "node scripts/grant-admin.mjs"
+    "grant-admin": "node scripts/grant-admin.mjs",
+    "load-market-data": "tsx scripts/load-market-data.mts",
+    "verify-market-data": "tsx scripts/verify-market-data.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -38,6 +40,7 @@
     "eslint-config-next": "16.3.1",
     "pg": "^8.23.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.12",
     "typescript": "^5",
     "vitest": "^4.1.11"
   }

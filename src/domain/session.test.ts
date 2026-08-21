@@ -14,6 +14,7 @@ import {
   previousSession,
   sessionsBetween,
   sessionsInRange,
+  type IsoDate,
   type TradingCalendar,
 } from "./session";
 
@@ -176,5 +177,62 @@ describe("the placeholder calendar", () => {
     // The real NSE list is ~15 days a year. If this ever looks complete,
     // it should be renamed and this test updated deliberately.
     expect(PLACEHOLDER_CALENDAR_2026.holidays.size).toBeLessThan(10);
+  });
+});
+
+/**
+ * Weekend sessions the exchange actually held.
+ *
+ * Found the hard way: the first backfill of real Upstox data was rejected
+ * wholesale because six genuine sessions between 2023 and 2026 fell on a
+ * Saturday or Sunday. A calendar that cannot express them cannot describe the
+ * Indian market.
+ */
+describe("special sessions", () => {
+  const budgetSaturday: TradingCalendar = {
+    name: "with-budget-day",
+    holidays: new Set<IsoDate>(),
+    specialSessions: new Set<IsoDate>(["2025-02-01"]),
+  };
+
+  it("treats a listed weekend date as a session", () => {
+    expect(isWeekend("2025-02-01")).toBe(true);
+    expect(isTradingSession("2025-02-01", budgetSaturday)).toBe(true);
+    // The Saturday either side stays closed.
+    expect(isTradingSession("2025-02-08", budgetSaturday)).toBe(false);
+  });
+
+  it("leaves an ordinary calendar unchanged when there are none", () => {
+    expect(isTradingSession("2025-02-01", WEEKENDS_ONLY)).toBe(false);
+  });
+
+  it("wins over the holiday list", () => {
+    // The exchange either traded that day or it did not. If it did, no general
+    // rule outranks that.
+    const conflicted: TradingCalendar = {
+      name: "conflicted",
+      holidays: new Set<IsoDate>(["2025-02-01"]),
+      specialSessions: new Set<IsoDate>(["2025-02-01"]),
+    };
+    expect(isTradingSession("2025-02-01", conflicted)).toBe(true);
+  });
+
+  it("counts in session arithmetic, not just in the predicate", () => {
+    // The bug this guards: a forward test's 60-session window silently running
+    // a session long because the walk skipped a day the exchange traded.
+    expect(nextSession("2025-01-31", budgetSaturday)).toBe("2025-02-01");
+    expect(previousSession("2025-02-03", budgetSaturday)).toBe("2025-02-01");
+    expect(sessionsInRange("2025-01-31", "2025-02-03", budgetSaturday)).toEqual([
+      "2025-01-31",
+      "2025-02-01",
+      "2025-02-03",
+    ]);
+  });
+
+  it("carries the six sessions observed in the loaded universe", () => {
+    for (const date of ["2023-11-12", "2024-01-20", "2024-03-02", "2024-05-18", "2025-02-01", "2026-02-01"]) {
+      expect(isWeekend(date)).toBe(true);
+      expect(isTradingSession(date, PLACEHOLDER_CALENDAR_2026)).toBe(true);
+    }
   });
 });
