@@ -25,8 +25,21 @@ import {
  * definition — never code (`x-wealth-product.md` §6).
  */
 
-const input =
-  "h-[44px] w-full rounded-[4px] border border-line bg-surface px-3 text-[15px] text-ink outline-none focus:border-brand";
+/**
+ * The field styling, without a width.
+ *
+ * Width is deliberately absent. It used to be baked in as `w-full`, which meant
+ * any caller trying to set its own width was competing with it — and losing,
+ * because both are `width` utilities and the winner is decided by stylesheet
+ * order rather than by which one is written last. That collapsed the operand
+ * dropdown to a bare chevron, so an advisor could not see that the right-hand
+ * side of a condition was still set to SMA. They typed 30 into what they took
+ * for a value box and got "RSI(14) is below SMA(30)".
+ */
+const inputBase =
+  "h-[44px] rounded-[4px] border border-line bg-surface px-3 text-[15px] text-ink outline-none focus:border-brand";
+
+const input = `${inputBase} w-full`;
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
@@ -68,7 +81,10 @@ function OperandEditor({
           else if (kind === "CONSTANT") onChange({ kind: "CONSTANT", value: 30 });
           else onChange({ kind, period: kind === "RSI" ? 14 : 20 });
         }}
-        className={`${input} flex-1`}
+        // `min-w-0` so it may shrink below its longest option, `flex-1` so it
+        // takes whatever the fixed-width number beside it leaves. Without the
+        // first it overflows the row; without the second it collapses.
+        className={`${inputBase} min-w-0 flex-1`}
       >
         {OPERAND_KINDS.map((k) => (
           <option key={k.value} value={k.value}>
@@ -78,15 +94,20 @@ function OperandEditor({
       </select>
 
       {INDICATORS.includes(operand.kind as (typeof INDICATORS)[number]) && "period" in operand && (
-        <input
-          aria-label={`${label} period`}
-          type="number"
-          min={2}
-          max={400}
-          value={operand.period}
-          onChange={(e) => onChange({ ...operand, period: Number(e.target.value) || 0 })}
-          className={`${input} w-[92px]`}
-        />
+        <label className="flex shrink-0 items-center gap-2">
+          {/* Named, because "14" beside a dropdown is not self-explanatory —
+              this is the field the SMA(30) confusion was typed into. */}
+          <span className="text-[12px] text-muted">over</span>
+          <input
+            aria-label={`${label} period`}
+            type="number"
+            min={2}
+            max={400}
+            value={operand.period}
+            onChange={(e) => onChange({ ...operand, period: Number(e.target.value) || 0 })}
+            className={`${inputBase} w-[76px]`}
+          />
+        </label>
       )}
 
       {operand.kind === "CONSTANT" && (
@@ -95,7 +116,7 @@ function OperandEditor({
           type="number"
           value={operand.value}
           onChange={(e) => onChange({ kind: "CONSTANT", value: Number(e.target.value) || 0 })}
-          className={`${input} w-[92px]`}
+          className={`${inputBase} w-[104px] shrink-0`}
         />
       )}
     </div>
