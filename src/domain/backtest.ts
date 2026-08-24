@@ -1,14 +1,14 @@
-import { signalsFor, stopPriceFor, type SignalSeries } from "./backtest-signals";
-import {
-  accountForTrade,
-  chargesForLeg,
-  type CostModel,
-  type CostsBreakdown,
-  type TradeAccounting,
-} from "./costs";
+import { signalsFor, type SignalSeries } from "./backtest-signals";
+import type { CostModel, CostsBreakdown } from "./costs";
 import { positionValue, type PriceTicks } from "./money";
 import type { Bar } from "./market-data";
 import type { IsoDate } from "./session";
+import {
+  advanceSession,
+  type ExitReason,
+  type PendingOrder,
+  type PositionState,
+} from "./session-step";
 import { requiredWarmUpBars, type StrategyDefinition } from "./strategy";
 
 /**
@@ -19,32 +19,15 @@ import { requiredWarmUpBars, type StrategyDefinition } from "./strategy";
  * false, and everything downstream inherits the error."* Everything in this
  * file is arranged around that sentence.
  *
- * ## The execution model, stated once
+ * ## What this file is, and is not
  *
- * A signal is evaluated **at the close of bar `t`** and filled **at the open of
- * bar `t+1`**. There is no configuration for this and no way to fill at the
- * signal bar's own close, because that is lookahead wearing a plausible face:
- * you cannot know a session's closing price and also trade at it. The gap
- * between decision and fill is where a real strategy loses money, and a backtest
- * that closes that gap is not optimistic, it is wrong.
- *
- * A stop-loss is different in kind. It is a resting order, not a decision, so
- * it can fill *within* a bar — including the bar the position was opened on.
- * Modelled as:
- *
- *   - open at or below the stop → filled at the open, because the market gapped
- *     through the level before the order could work
- *   - otherwise low at or below the stop → filled at the stop
- *
- * Filling a gap-down at the stop price rather than the open would hand the
- * strategy money that nobody could have made.
- *
- * ## Long only
- *
- * `stopLossPercent` is defined as a percentage *below the entry*, and the
- * entry action is "buy". Shorting is not expressible in the definition today,
- * so it is not modelled here — an engine that silently supported it would be
- * running rules nobody wrote.
+ * It is the *time* half of a backtest: assembling a shared timeline across
+ * instruments, walking it oldest first, and turning what comes back into
+ * metrics. The trading itself — when a fill happens and at what price — lives
+ * in `session-step.ts`, because the forward-test engine has to run exactly the
+ * same code. The product's claim rests on comparing forward results against
+ * backtest results, and that comparison is meaningless if the two engines can
+ * disagree about a fill. Read that file for the execution model.
  *
  * ## Costs
  *
@@ -57,7 +40,7 @@ export const ENGINE_VERSION = "backtest-1";
 
 export class BacktestError extends Error {}
 
-export type ExitReason = "SIGNAL" | "STOP_LOSS" | "END_OF_PERIOD";
+export type { ExitReason };
 
 export type ExecutedTrade = {
   symbol: string;
@@ -85,10 +68,30 @@ export type BacktestMetrics = {
   exposurePercent: number;
 };
 
+/**
+ * A position the walk finished still holding.
+ *
+ * Always empty for a backtest, which closes out on its last session. It exists
+ * for the forward test, where `closeOutOn: null` leaves the window open and an
+ * open position is a real thing that has to be recorded and shown — the engine
+ * reports closed round trips, so without this an open position would be
+ * invisible to everything downstream.
+ */
+export type OpenPositionAtEnd = {
+  symbol: string;
+  qty: number;
+  entryDate: IsoDate;
+  entryPrice: PriceTicks;
+  stopPrice: PriceTicks;
+  /** Latest close seen for the instrument, for marking to market. */
+  markPrice: PriceTicks;
+};
+
 export type BacktestOutcome = {
   periodStart: IsoDate;
   periodEnd: IsoDate;
   trades: ExecutedTrade[];
+  openPositions: OpenPositionAtEnd[];
   equityCurve: EquityPoint[];
   metrics: BacktestMetrics;
   /** Bars consumed before the first signal could exist. */
@@ -107,13 +110,25 @@ export type BacktestInput = {
   costModel: CostModel;
   /** Lot sizes, where an instrument does not trade in single units. */
   lotSizes?: Record<string, number>;
-};
 
-type OpenPosition = {
-  qty: number;
-  entryDate: IsoDate;
-  entryPrice: PriceTicks;
-  stopPrice: PriceTicks;
+  /**
+   * First session on which a trade may be placed.
+   *
+   * Defaults to the end of warm-up, which is what a backtest wants. A forward
+   * test passes the session its window opened on, because the bars before that
+   * are history it is allowed to *read* — indicators have to warm up — but not
+   * to trade on.
+   */
+  tradeFrom?: IsoDate;
+
+  /**
+   * The session on which anything still open is closed out.
+   *
+   * Defaults to the last bar supplied. Pass `null` for a window that has not
+   * ended — a running forward test must not force-close its positions merely
+   * because today is the most recent session anyone has data for.
+   */
+  closeOutOn?: IsoDate | null;
 };
 
 type SymbolState = {
@@ -123,9 +138,9 @@ type SymbolState = {
   /** Bar index by date, so a shared timeline can address each symbol's series. */
   indexByDate: Map<IsoDate, number>;
   lotSize: number;
-  position: OpenPosition | null;
+  position: PositionState | null;
   /** Set on bar `t`, acted on at the open of bar `t+1`. */
-  pending: "ENTER" | "EXIT" | null;
+  pending: PendingOrder;
   lastClose: PriceTicks | null;
 };
 
@@ -168,7 +183,8 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
   // at index 49. Gating at index 50 would silently discard a session on which
   // the strategy could legitimately have traded.
   const firstSignalIndex = Math.max(warmUp - 1, 0);
-  const firstTradableDate = earliestTradableDate(symbols, states, firstSignalIndex);
+  const firstTradableDate =
+    input.tradeFrom ?? earliestTradableDate(symbols, states, firstSignalIndex);
   if (firstTradableDate === null) {
     throw new BacktestError(
       `no instrument has more than ${warmUp} sessions, so these rules can never produce a signal`,
@@ -180,11 +196,30 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
   const equityCurve: EquityPoint[] = [];
   let sessionsWithExposure = 0;
 
-  const reportingDates = timeline.filter((date) => date >= firstTradableDate);
+  const inWindow = timeline.filter((date) => date >= firstTradableDate);
+  if (inWindow.length === 0) {
+    throw new BacktestError(`no sessions on or after ${firstTradableDate}`);
+  }
+
+  // `undefined` means "close out on the last bar I gave you", which is what a
+  // backtest means. `null` means "the window is still open" — a running
+  // forward test, where forcing a close would fabricate an exit.
+  const closeOutOn = input.closeOutOn === undefined ? inWindow[inWindow.length - 1] : input.closeOutOn;
+
+  // The walk *ends* there too, not merely closes out there.
+  //
+  // Closing positions on the final session while continuing to trade past it
+  // is the shape this had first, and it was silently wrong: a completed
+  // forward test kept opening and closing positions for every session the data
+  // happened to reach, so its reported result described two years the window
+  // never covered. Twelve of fourteen trades in the first end-to-end run were
+  // entered after the window had closed.
+  const reportingDates =
+    closeOutOn === null ? inWindow : inWindow.filter((date) => date <= closeOutOn);
 
   for (let d = 0; d < reportingDates.length; d++) {
     const date = reportingDates[d];
-    const isFinalDate = d === reportingDates.length - 1;
+    const isFinalDate = closeOutOn !== null && date === closeOutOn;
 
     for (const symbol of symbols) {
       const state = states.get(symbol)!;
@@ -192,51 +227,37 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
       if (i === undefined) continue; // this instrument did not trade today
       const bar = state.bars[i];
 
-      // --- act on what was decided at yesterday's close ---------------------
-      if (state.position) {
-        const closed = closeIfDue(state, bar, costModel, isFinalDate);
-        if (closed) {
-          trades.push(closed.trade);
-          cash += closed.proceedsPaise;
-          state.position = null;
-        }
-      } else if (state.pending === "ENTER" && !isFinalDate) {
-        // Not on the last session of the reported period. The position would
-        // have to be force-closed at that same session's close, which is a
-        // round trip nobody would make and which can only pay away the charges
-        // — and if it were left open instead, its unrealised value would sit in
-        // the equity curve as a result that never happened. Found by running
-        // against real data: cash came out ₹76.79 short of capital plus net.
-        const opened = openAt(state, bar, definition, costModel, cash);
-        if (opened) {
-          state.position = opened.position;
-          cash -= opened.outlayPaise;
+      const step = advanceSession({
+        bar,
+        position: state.position,
+        pending: state.pending,
+        cashPaise: cash,
+        entrySignal: state.signals.entry[i],
+        exitSignal: state.signals.exit[i],
+        definition,
+        costModel,
+        lotSize: state.lotSize,
+        isFinalSession: isFinalDate,
+      });
 
-          // A stop can fire on the entry bar itself. It is a resting order, and
-          // the session still has a low after the open we bought at.
-          const stopped = stopIfHit(state, bar, costModel, { skipOpenGap: true });
-          if (stopped) {
-            trades.push(stopped.trade);
-            cash += stopped.proceedsPaise;
-            state.position = null;
-          }
-        }
+      if (step.closed) {
+        trades.push({
+          symbol: state.symbol,
+          qty: step.closed.qty,
+          entryDate: step.closed.entryDate,
+          entryPrice: step.closed.entryPrice,
+          exitDate: bar.date,
+          exitPrice: step.closed.exitPrice,
+          exitReason: step.closed.reason,
+          grossPnlPaise: step.closed.accounting.grossPnlPaise,
+          costs: step.closed.accounting.costs,
+          netPnlPaise: step.closed.accounting.netPnlPaise,
+        });
       }
-      state.pending = null;
 
-      // --- decide, at this close, what to do at tomorrow's open -------------
-      //
-      // No index gate here. `conditionAt` returns null — not false — while any
-      // operand is still warming up, so an unavailable indicator cannot produce
-      // a signal. One rule, in one place, rather than a second bound that can
-      // drift out of step with it.
-      if (!isFinalDate) {
-        if (state.position) {
-          if (state.signals.exit[i] === true) state.pending = "EXIT";
-        } else if (state.signals.entry[i] === true) {
-          state.pending = "ENTER";
-        }
-      }
+      cash = step.cashPaise;
+      state.position = step.position;
+      state.pending = step.pending;
 
       state.lastClose = bar.close;
     }
@@ -254,10 +275,25 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
     equityCurve.push({ date, equityPaise: cash + holdings });
   }
 
+  const openPositions: OpenPositionAtEnd[] = [];
+  for (const symbol of symbols) {
+    const state = states.get(symbol)!;
+    if (!state.position || state.lastClose === null) continue;
+    openPositions.push({
+      symbol,
+      qty: state.position.qty,
+      entryDate: state.position.entryDate,
+      entryPrice: state.position.entryPrice,
+      stopPrice: state.position.stopPrice,
+      markPrice: state.lastClose,
+    });
+  }
+
   return {
     periodStart: reportingDates[0],
     periodEnd: reportingDates[reportingDates.length - 1],
     trades,
+    openPositions,
     equityCurve,
     warmUpBars: warmUp,
     metrics: computeMetrics({
@@ -286,167 +322,6 @@ function earliestTradableDate(
     if (earliest === null || bar.date < earliest) earliest = bar.date;
   }
   return earliest;
-}
-
-/**
- * How many units fit, given a target notional and the cash on hand.
- *
- * Charges are part of the outlay, not an afterthought — a fill that leaves cash
- * negative is a fill that could not have happened. The loop steps by the
- * shortfall in whole units rather than decrementing, so it converges in one or
- * two passes instead of walking down from a large quantity.
- */
-function affordableQty(
-  model: CostModel,
-  price: PriceTicks,
-  targetPaise: number,
-  cashPaise: number,
-  lotSize: number,
-): number {
-  const unitValue = positionValue(price, 1);
-  if (unitValue <= 0) return 0;
-
-  const outlay = (qty: number) =>
-    positionValue(price, qty) + chargesForLeg(model, { side: "BUY", price, qty }).totalPaise;
-
-  const lots = (units: number) => Math.floor(units / lotSize) * lotSize;
-
-  let qty = lots(Math.floor(Math.min(targetPaise, cashPaise) / unitValue));
-
-  for (let guard = 0; qty > 0 && outlay(qty) > cashPaise && guard < 64; guard++) {
-    const over = outlay(qty) - cashPaise;
-    const step = Math.max(lotSize, lots(Math.ceil(over / unitValue)));
-    qty -= step;
-  }
-
-  return qty > 0 && outlay(qty) <= cashPaise ? qty : 0;
-}
-
-function openAt(
-  state: SymbolState,
-  bar: Bar,
-  definition: StrategyDefinition,
-  model: CostModel,
-  cashPaise: number,
-): { position: OpenPosition; outlayPaise: number } | null {
-  const price = bar.open;
-
-  // Percent of **cash on hand**, not of mark-to-market equity. The definition
-  // says "percent of available capital", and available is the honest reading:
-  // a position cannot be funded from the unrealised value of another one. It
-  // also makes a run hand-checkable, which is what gate G4 requires. The choice
-  // is recorded in the run's methodology so a reader is never left guessing.
-  const target = Math.floor((cashPaise * definition.positionSizePercent) / 100);
-  const qty = affordableQty(model, price, target, cashPaise, state.lotSize);
-  if (qty <= 0) return null;
-
-  const outlayPaise =
-    positionValue(price, qty) + chargesForLeg(model, { side: "BUY", price, qty }).totalPaise;
-
-  return {
-    position: {
-      qty,
-      entryDate: bar.date,
-      entryPrice: price,
-      stopPrice: stopPriceFor(price, definition.stopLossPercent),
-    },
-    outlayPaise,
-  };
-}
-
-/**
- * Close a position if this bar says so.
- *
- * Order matters and is not arbitrary. When an exit was signalled yesterday, the
- * order rests at today's open — but if the market gapped through the stop
- * overnight, the stop is what filled, at the open, and it filled first. Getting
- * this backwards credits the strategy with an exit at a price the position
- * never saw.
- */
-function closeIfDue(
-  state: SymbolState,
-  bar: Bar,
-  model: CostModel,
-  isFinalDate: boolean,
-): { trade: ExecutedTrade; proceedsPaise: number } | null {
-  const position = state.position!;
-
-  if (state.pending === "EXIT") {
-    if ((bar.open as number) <= (position.stopPrice as number)) {
-      return settle(state, bar, bar.open, "STOP_LOSS", model);
-    }
-    return settle(state, bar, bar.open, "SIGNAL", model);
-  }
-
-  const stopped = stopIfHit(state, bar, model, { skipOpenGap: false });
-  if (stopped) return stopped;
-
-  // Nothing may be left open past the end of the reported period — an unclosed
-  // position is an unrealised number, and reporting one as a result would let a
-  // losing trade sit off the books indefinitely.
-  if (isFinalDate) return settle(state, bar, bar.close, "END_OF_PERIOD", model);
-
-  return null;
-}
-
-function stopIfHit(
-  state: SymbolState,
-  bar: Bar,
-  model: CostModel,
-  options: { skipOpenGap: boolean },
-): { trade: ExecutedTrade; proceedsPaise: number } | null {
-  const position = state.position!;
-  const stop = position.stopPrice as number;
-
-  if (!options.skipOpenGap && (bar.open as number) <= stop) {
-    // Gapped through overnight. The fill is the open, not the stop — nobody
-    // could have sold at a level the market opened below.
-    return settle(state, bar, bar.open, "STOP_LOSS", model);
-  }
-  if ((bar.low as number) <= stop) {
-    return settle(state, bar, position.stopPrice, "STOP_LOSS", model);
-  }
-  return null;
-}
-
-function settle(
-  state: SymbolState,
-  bar: Bar,
-  exitPrice: PriceTicks,
-  reason: ExitReason,
-  model: CostModel,
-): { trade: ExecutedTrade; proceedsPaise: number } {
-  const position = state.position!;
-  const accounting: TradeAccounting = accountForTrade(
-    model,
-    { side: "BUY", price: position.entryPrice, qty: position.qty },
-    { side: "SELL", price: exitPrice, qty: position.qty },
-  );
-
-  const trade: ExecutedTrade = {
-    symbol: state.symbol,
-    qty: position.qty,
-    entryDate: position.entryDate,
-    entryPrice: position.entryPrice,
-    exitDate: bar.date,
-    exitPrice,
-    exitReason: reason,
-    grossPnlPaise: accounting.grossPnlPaise,
-    costs: accounting.costs,
-    netPnlPaise: accounting.netPnlPaise,
-  };
-
-  // Cash back is the sale proceeds less the charges on the *sell* leg only —
-  // the buy leg's charges were already paid out of cash when the position
-  // opened, and taking them twice would understate the return.
-  const sellCharges = chargesForLeg(model, {
-    side: "SELL",
-    price: exitPrice,
-    qty: position.qty,
-  }).totalPaise;
-  const proceedsPaise = positionValue(exitPrice, position.qty) - sellCharges;
-
-  return { trade, proceedsPaise };
 }
 
 // ---------------------------------------------------------------------------

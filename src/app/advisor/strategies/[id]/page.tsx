@@ -10,9 +10,11 @@ import { registrationGate } from "@/domain/registration-gate";
 import { describeCondition, type StrategyDefinition } from "@/domain/strategy";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { listRunsForStrategy } from "@/server/queries/backtest";
+import { listForwardTestsForStrategy } from "@/server/queries/forward-test";
 import { currentIdentity } from "@/server/identity";
 import { ReviseForm } from "./ReviseForm";
 import { RunBacktest } from "./RunBacktest";
+import { StartForwardTest } from "./StartForwardTest";
 
 export const dynamic = "force-dynamic";
 
@@ -45,9 +47,10 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
     .orderBy(asc(strategyVersions.versionNo));
 
   const head = versions.at(-1);
-  const [catalogue, runs] = await Promise.all([
+  const [catalogue, runs, forwardTests] = await Promise.all([
     loadCatalogue(),
     listRunsForStrategy(strategy.id, identity.advisor.id),
+    listForwardTestsForStrategy(strategy.id, identity.advisor.id),
   ]);
 
   const runsByVersion = new Map<number, typeof runs>();
@@ -55,6 +58,13 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
     const existing = runsByVersion.get(entry.versionNo);
     if (existing) existing.push(entry);
     else runsByVersion.set(entry.versionNo, [entry]);
+  }
+
+  const testsByVersion = new Map<number, typeof forwardTests>();
+  for (const entry of forwardTests) {
+    const existing = testsByVersion.get(entry.versionNo);
+    if (existing) existing.push(entry);
+    else testsByVersion.set(entry.versionNo, [entry]);
   }
 
   return (
@@ -137,12 +147,34 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
                   );
                 })}
 
+                {/* Forward tests on this version, newest first. Running,
+                    completed and abandoned all appear — an abandoned window is
+                    the denominator that makes a completed one mean something
+                    (PRD §5.6), so there is no filter and no way to add one. */}
+                {testsByVersion.get(version.versionNo)?.map(({ test }) => (
+                  <Link
+                    key={test.id}
+                    href={`/advisor/forward-tests/${test.id}`}
+                    className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-[6px] border border-line px-3 py-2 text-[13px]"
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-tag-ink">
+                      Forward · {FORWARD_STATUS[test.status] ?? test.status}
+                    </span>
+                    <span className="text-muted">{test.plannedSessions} sessions</span>
+                    {describeForwardTest(test)}
+                    <span className="ml-auto text-[12px] text-muted">
+                      {test.startedAt ? test.startedAt.toISOString().slice(0, 10) : "not opened"}
+                    </span>
+                  </Link>
+                ))}
+
                 {isHead && (
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-col gap-3">
                     <RunBacktest
                       versionId={version.id}
                       runCount={runsByVersion.get(version.versionNo)?.length ?? 0}
                     />
+                    <StartForwardTest versionId={version.id} versionNo={version.versionNo} />
                   </div>
                 )}
               </li>
@@ -164,13 +196,58 @@ export default async function StrategyPage({ params }: PageProps<"/advisor/strat
         )}
 
         <p className="mt-8 rounded-[6px] bg-surface-alt p-4 text-[13px] text-muted">
-          A backtest is a statement about data that was already known when the rules were written.
-          The forward test — declared hypothesis, locked parameters, a fixed window — is what the
-          record is actually built on, and it is W6.
+          A backtest is a statement about data that was already known when the rules were written. A
+          forward test — declared hypothesis, locked parameters, a fixed window opening on a session
+          that has not happened yet — is what the record is actually built on. Every one you start
+          stays here, whatever it turns out to say.
         </p>
       </div>
     </AppShell>
   );
+}
+
+const FORWARD_STATUS: Record<string, string> = {
+  DRAFT: "opening",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  ABANDONED: "abandoned",
+};
+
+/**
+ * The one line a forward test gets in the version list.
+ *
+ * A running test shows no number at all. Its figures move every evening and
+ * belong on the console where they can be labelled provisional — a percentage
+ * in a list of results reads as a result, whatever the badge beside it says.
+ */
+function describeForwardTest(test: {
+  status: string;
+  outcome: string | null;
+  finalResults: unknown;
+  plannedSessions: number;
+}) {
+  if (test.status === "ABANDONED") {
+    return <span className="text-muted">stopped early, reason on the record</span>;
+  }
+
+  const results = test.finalResults as { netReturnPercent: number; tradeCount: number } | null;
+  if (test.status === "COMPLETED" && results) {
+    return (
+      <>
+        <span
+          className={`font-semibold tabular-nums ${
+            results.netReturnPercent >= 0 ? "text-ink" : "text-danger-ink"
+          }`}
+        >
+          {results.netReturnPercent >= 0 ? "+" : ""}
+          {results.netReturnPercent.toFixed(2)}% net
+        </span>
+        <span className="text-muted">{results.tradeCount} trades</span>
+      </>
+    );
+  }
+
+  return <span className="text-muted">in progress</span>;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

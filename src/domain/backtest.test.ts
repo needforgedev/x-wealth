@@ -117,7 +117,11 @@ describe("execution model", () => {
     const rows: OhlcRow[] = [
       { open: "100", high: "101", low: "99", close: "100" },
       { open: "100", high: "101", low: "99", close: "90" }, // entry signal
-      { open: "95", high: "96", low: "94", close: "95" }, // final session
+      // The final session's close differs from its open on purpose. With the
+      // two equal, a position wrongly opened here would be marked back to
+      // exactly what it cost and the mistake would be invisible in equity —
+      // which is how this escaped the first time it was mutated.
+      { open: "95", high: "99", low: "94", close: "98" },
     ];
 
     const outcome = run(priceRules(95, 500), rows);
