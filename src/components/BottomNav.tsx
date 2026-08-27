@@ -14,24 +14,24 @@ export type NavTab = {
   height: number;
 };
 
-export const INVESTOR_TABS: ReadonlyArray<NavTab> = [
-  { href: "/chats", label: "Chats", src: "/assets/nav-chat.svg", width: 20, height: 20 },
-  { href: "/signals", label: "Signals", src: "/assets/nav-signals.svg", width: 18, height: 10 },
-  { href: "/portfolio", label: "Portfolio", src: "/assets/nav-portfolio.svg", width: 14, height: 14 },
-  { href: "/discover", label: "Discover", src: "/assets/nav-search.svg", width: 17.49, height: 17.49 },
-  { href: "/profile", label: "Profile", src: "/assets/nav-profile.svg", width: 16, height: 16 },
-];
-
 /**
- * Same five glyphs as the investor bar — the advisor artboards only re-point
- * the first two. Portfolio, Discover and Profile have no advisor-specific
- * artboard, so they stay on the shared screens.
+ * Two tabs, not five.
+ *
+ * The bar was Chats · Signals · Portfolio · Discover · Profile, and three of
+ * those were the distribution surface — a chat channel, a signal feed, and
+ * advisor discovery. `CLAUDE.md` §8.5 prohibits all three, so they are gone
+ * along with the routes behind them (`plan.md` W10-15).
+ *
+ * `ADVISOR_TABS` went with them. It only ever re-pointed the first two entries
+ * at `/advisor/chats` and `/advisor/signals`; with those deleted it was the
+ * same list twice, and no advisor page renders this bar anyway.
+ *
+ * This is a holding shape, not a designed one. W24 collapses the two personas
+ * into one user, at which point the trader's primary destination is their
+ * strategy list and this bar gets rebuilt around it.
  */
-export const ADVISOR_TABS: ReadonlyArray<NavTab> = [
-  { href: "/advisor/chats", label: "Chats", src: "/assets/nav-chat.svg", width: 20, height: 20 },
-  { href: "/advisor/signals", label: "Signals", src: "/assets/nav-signals.svg", width: 18, height: 10 },
+export const INVESTOR_TABS: ReadonlyArray<NavTab> = [
   { href: "/portfolio", label: "Portfolio", src: "/assets/nav-portfolio.svg", width: 14, height: 14 },
-  { href: "/discover", label: "Discover", src: "/assets/nav-search.svg", width: 17.49, height: 17.49 },
   { href: "/profile", label: "Profile", src: "/assets/nav-profile.svg", width: 16, height: 16 },
 ];
 
@@ -54,7 +54,11 @@ export function BottomNav({
   return (
     <nav
       aria-label="Primary"
-      className="sticky bottom-0 z-10 flex h-[55px] shrink-0 items-center justify-between bg-surface pl-[25px] pr-[38px] shadow-[0_4px_12px_0_rgb(0_0_0/0.33)]"
+      // Centred with a fixed gap rather than the artboard's `justify-between`
+      // and asymmetric padding. That spacing existed to reproduce the 48px gaps
+      // between five hit areas; with two tabs left it flings them into opposite
+      // corners. Revisit when W24 settles what this bar actually contains.
+      className="sticky bottom-0 z-10 flex h-[55px] shrink-0 items-center justify-center gap-[48px] bg-surface shadow-[0_4px_12px_0_rgb(0_0_0/0.33)]"
     >
       {tabs.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
