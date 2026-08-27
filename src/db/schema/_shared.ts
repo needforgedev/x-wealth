@@ -180,25 +180,6 @@ export type { CostModel, CostsBreakdown } from "@/domain/costs";
 export type { StrategyDefinition } from "@/domain/strategy";
 
 /**
- * A staged exit on a trade call.
- *
- * Was re-exported from `src/domain/signal.ts` so the column type and the
- * validator could not disagree about what a target is. That validator is gone
- * — trade calls were the distribution surface, which `CLAUDE.md` §8.5
- * prohibits — so the type is restated here to keep the schema compiling on its
- * own.
- *
- * It is temporary. The `signals` and `market_views` tables that use it are
- * dropped in the teardown migration (`plan.md` W10-06), and this type goes with
- * them. Nothing new should reference it.
- *
- * `price` is a decimal string, not a number — the column beside it is
- * `numeric(18,4)`, and routing a price through a float on the way to JSON
- * silently rounds it.
- */
-export type SignalTarget = { label: string; price: string };
-
-/**
  * Computed results. We report what happened and never characterise it — no
  * score, no grade, no verdict field will ever be added here
  * (`x-wealth-product.md` §5.6).

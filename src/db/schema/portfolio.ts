@@ -1,18 +1,27 @@
 import { date, index, integer, pgTable, uuid } from "drizzle-orm/pg-core";
 
 import { createdAt, price, symbol, timestampTz } from "./_shared";
-import { signals } from "./distribution";
 import { investors } from "./investors";
 
 /**
  * Manually entered holdings. There is no broker integration and no order
- * placement — if one is ever added it is read-only (`x-wealth-product.md`
- * §5.8).
+ * placement — if one is ever added it is read-only.
  *
- * `source_signal_id` links an investor's actual trade back to the signal that
- * prompted it. It is how we measure real-world outcome versus paper outcome,
- * and it is the single most valuable dataset this platform will generate.
- * **Do not drop it** (`x-wealth-product.md` §6).
+ * ## `source_signal_id` was dropped in 0009, against the v1 instruction
+ *
+ * The comment here used to say **do not drop it**: the column linked an
+ * investor's real trade back to the advisor signal that prompted it, and the v1
+ * spec called it the single most valuable dataset the platform would generate.
+ * That was true of the product it described.
+ *
+ * v2 has no advisor and no signal to be prompted by — cross-user distribution
+ * is what `CLAUDE.md` §8.5 prohibits. The measurement survives and gets sharper:
+ * execution-gap analysis (§7.12, W21) compares what a trader's **own** strategy
+ * signalled against what they actually did, via `signal_events` and
+ * `execution_records`. Same question, one user, no regulatory surface.
+ *
+ * So this is a deliberate reversal of a load-bearing v1 instruction, not an
+ * oversight. Do not restore the column — build W21 instead.
  */
 export const portfolioEntries = pgTable(
   "portfolio_entries",
@@ -27,14 +36,10 @@ export const portfolioEntries = pgTable(
     avgPrice: price("avg_price").notNull(),
     transactionDate: date("transaction_date").notNull(),
 
-    /** Nullable — an investor may trade without a signal behind it. */
-    sourceSignalId: uuid("source_signal_id").references(() => signals.id),
-
     createdAt: createdAt(),
     updatedAt: timestampTz("updated_at").notNull().defaultNow(),
   },
   (t) => [
     index("portfolio_entries_investor_id_idx").on(t.investorId),
-    index("portfolio_entries_source_signal_id_idx").on(t.sourceSignalId),
   ],
 );
