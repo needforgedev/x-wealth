@@ -350,8 +350,18 @@ function checkCondition(condition: Condition, field: string, issues: ValidationI
  * is the period being *reported*, not the period being *read*.
  */
 export function requiredWarmUpBars(definition: StrategyDefinition): number {
-  const { entry, exit } = resolveDefinition(definition);
-  let longest = 0;
+  const { entry, exit, minAvgTurnoverPaise } = resolveDefinition(definition);
+
+  /**
+   * A liquidity floor needs its own lookback before it can answer.
+   *
+   * Counted here rather than only inside the engine so the validator's "these
+   * rules need N sessions before a first signal" is true of the whole
+   * definition. A strategy accepted against fewer bars than its turnover
+   * window would produce no entries at all and no message saying why.
+   */
+  let longest = minAvgTurnoverPaise === null ? 0 : TURNOVER_LOOKBACK_SESSIONS;
+
   for (const condition of [entry, exit]) {
     for (const operand of [condition.left, condition.right]) {
       if (operand.kind === "PRICE" || operand.kind === "CONSTANT") continue;

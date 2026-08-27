@@ -1,11 +1,12 @@
 import { indicatorSeries } from "./indicators";
-import { priceFromString, type PriceTicks } from "./money";
+import { positionValue, priceFromString, type PriceTicks } from "./money";
 import type { Bar } from "./market-data";
 import {
   comparisonSpace,
   type Condition,
   type Operand,
   type OperandSpace,
+  TURNOVER_LOOKBACK_SESSIONS,
   type ResolvedDefinition,
 } from "./strategy";
 
@@ -141,7 +142,57 @@ export function signalsFor(definition: ResolvedDefinition, bars: readonly Bar[])
     return bars.map((_, i) => conditionAt(condition, left, right, i));
   };
 
-  return { entry: build(definition.entry), exit: build(definition.exit) };
+  const exit = build(definition.exit);
+  let entry = build(definition.entry);
+
+  /**
+   * The liquidity floor suppresses the *entry* signal and leaves the exit
+   * alone.
+   *
+   * A position already open in a symbol that has since gone thin still has to
+   * be closed — refusing to exit because the instrument no longer meets the
+   * entry standard would trap capital in exactly the situation where getting
+   * out matters most. `CLAUDE.md` §7.3 puts the filter on the universe, which
+   * is about what may be *bought*.
+   */
+  if (definition.minAvgTurnoverPaise !== null) {
+    const liquid = liquidityMask(bars, definition.minAvgTurnoverPaise);
+    entry = entry.map((signal, i) => {
+      if (liquid[i] === null) return null; // still warming up — unknown, not false
+      return liquid[i] ? signal : false;
+    });
+  }
+
+  return { entry, exit };
+}
+
+/**
+ * Whether each session clears the average-turnover floor.
+ *
+ * Turnover is close × volume over `TURNOVER_LOOKBACK_SESSIONS`, which is the
+ * crude version of the constraint the primer calls the one nobody models:
+ * a strategy whose position size exceeds the visible depth is not a strategy,
+ * it is a backtest artefact.
+ *
+ * `null` for the first sessions, exactly as an indicator reports while warming
+ * up. An unknown liquidity reading must not read as "thin" — that would silently
+ * suppress every early entry and change a run's results for a reason no output
+ * mentions.
+ *
+ * Deliberately backward-looking only. Using the whole series' average would let
+ * a stock that became liquid in 2025 authorise trades in 2021, which is
+ * lookahead bias wearing a liquidity filter's clothes.
+ */
+function liquidityMask(bars: readonly Bar[], floorPaise: number): Array<boolean | null> {
+  const turnover = bars.map((bar) => positionValue(bar.close, bar.volume));
+
+  let window = 0;
+  return bars.map((_, i) => {
+    window += turnover[i];
+    if (i >= TURNOVER_LOOKBACK_SESSIONS) window -= turnover[i - TURNOVER_LOOKBACK_SESSIONS];
+    if (i < TURNOVER_LOOKBACK_SESSIONS - 1) return null;
+    return window / TURNOVER_LOOKBACK_SESSIONS >= floorPaise;
+  });
 }
 
 /** The stop price for a long entry, in ticks. Rounds down — never in our favour. */

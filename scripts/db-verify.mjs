@@ -128,7 +128,7 @@ try {
         insert into strategies(id, user_id, name, segment, timeframe)
           values ('${F}', '${F}', 'check', 'EQUITY', '1d');
         insert into strategy_versions(id, strategy_id, version_no, definition)
-          values ('${F}', '${F}', 1, '{}'::jsonb);
+          values ('${F}', '${F}', 1, '{"version": 1, "instruments": ["NSE:RELIANCE"], "timeframe": "1d", "entry": {"left": {"kind": "PRICE"}, "comparator": "ABOVE", "right": {"kind": "CONSTANT", "value": 1}}, "exit": {"left": {"kind": "PRICE"}, "comparator": "BELOW", "right": {"kind": "CONSTANT", "value": 1}}, "stopLossPercent": 5, "positionSizePercent": 25, "initialCapitalPaise": 10000000}'::jsonb);
         insert into backtest_runs(id, strategy_version_id, period_start, period_end,
                                   initial_capital_paise, cost_model, results, methodology)
           values ('${F}', '${F}', '2020-01-01', '2024-01-01', 10000000,

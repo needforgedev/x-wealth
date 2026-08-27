@@ -155,3 +155,64 @@ describe("risk-based sizing derives the quantity from the stop", () => {
     expect(risked.qty).toBeGreaterThan(committed.qty * 5);
   });
 });
+
+describe("the liquidity floor gates entries, not exits", () => {
+  /** Thin for the first stretch, then heavily traded. */
+  const thinThenLiquid: OhlcRow[] = [
+    ...Array.from({ length: 22 }, () => ({
+      open: "100",
+      high: "101",
+      low: "94",
+      close: "95",
+      volume: 10,
+    })),
+    ...Array.from({ length: 6 }, () => ({
+      open: "95",
+      high: "96",
+      low: "94",
+      close: "95",
+      volume: 1_000_000,
+    })),
+  ];
+
+  const withFloor = (minAvgTurnoverPaise: number | null): StrategyDefinitionV2 => ({
+    ...upgradeToV2(priceRuleV1()),
+    universe: { instruments: ["NSE:TEST"], minAvgTurnoverPaise },
+  });
+
+  const runOn = (definition: StrategyDefinitionV2, rowsIn: OhlcRow[]) =>
+    runBacktest({
+      definition,
+      series: { "NSE:TEST": ohlcBars({ from: "2026-01-05", rows: rowsIn }) },
+      costModel: FREE,
+    });
+
+  it("trades the thin stretch when there is no floor", () => {
+    // ₹95 × 10 shares = ₹950 a session. Without a floor that is tradeable.
+    expect(runOn(withFloor(null), thinThenLiquid).trades.length).toBeGreaterThan(0);
+  });
+
+  it("refuses to enter while average turnover is under the floor", () => {
+    // ₹10,00,000 a session demanded; the thin stretch does ₹950.
+    const out = runOn(withFloor(100_000_000), thinThenLiquid);
+    for (const trade of out.trades) {
+      // Nothing may be entered out of the first 22 thin sessions.
+      expect(trade.entryDate >= "2026-02-04").toBe(true);
+    }
+  });
+
+  it("counts the turnover lookback as warm-up, and says so", () => {
+    // Fewer bars than the 20-session lookback. The engine refuses outright
+    // rather than returning an empty run: a strategy that cannot produce a
+    // signal is a statement about the definition, and silence would read as
+    // "no opportunities" instead of "this could never have traded".
+    const short = thinThenLiquid.slice(0, 5);
+    expect(() => runOn(withFloor(1), short)).toThrow(/never produce a signal/);
+  });
+
+  it("adds nothing to warm-up when there is no floor", () => {
+    // Same five bars, no liquidity floor: the price rules need no history, so
+    // the run is legal even though it finds nothing to do.
+    expect(() => runOn(withFloor(null), thinThenLiquid.slice(0, 5))).not.toThrow();
+  });
+});
