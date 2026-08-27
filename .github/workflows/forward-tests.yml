@@ -1,0 +1,109 @@
+# The evening job. `plan.md` AD-09, W6-04, W3-11.
+#
+# Loads the day's bars, advances every running forward test against them, then
+# checks the pipeline is actually alive. Until this existed, both of those first
+# two steps were commands a human had to remember to type — which is not a
+# forward test, it is a manual process wearing one's clothes.
+#
+# ## Why GitHub Actions and not a Vercel cron
+#
+# Recorded as AD-09. The two jobs are already `tsx` entry points designed to be
+# run from the command line, and Actions runs them unchanged — no second code
+# path, no API route duplicating what a script already does. A serverless
+# function would also have to finish inside its timeout, and the loader makes
+# six sequential vendor calls before it writes anything. Long-running and
+# stateful is exactly what `CLAUDE.md` §12 and AD-09 say not to put on an edge
+# runtime.
+#
+# ## The gotcha that matters for this repository specifically
+#
+# **GitHub disables scheduled workflows after 60 days without a commit.** A
+# forward test runs 60+ sessions, so a quiet stretch late in a window would stop
+# the scheduler at precisely the point the record is most valuable — and it
+# stops silently, which is the failure mode this whole job exists to prevent.
+# While the build is active this cannot bite. If the repository ever goes quiet
+# with a test running, re-enable it in the Actions tab and check the health
+# report for the gap.
+
+name: Forward tests
+
+on:
+  schedule:
+    # 11:15 UTC = 16:45 IST — after the 15:30 close, with time for the vendor to
+    # settle the day's candle. Weekdays only; the market does not open at the
+    # weekend and a replay against unchanged bars is a no-op anyway.
+    #
+    # Actions cron is best-effort and can run late under load. That is fine
+    # here: the replay is idempotent and a missed evening self-heals on the
+    # next run, because each test is re-run from the session its window opened
+    # on rather than stepped forward from a stored position.
+    - cron: "15 11 * * 1-5"
+  workflow_dispatch:
+
+# Never let two runs overlap. The replay itself is idempotent, but two of them
+# writing to append-only tables at once is a race with no clean-up path — there
+# is no DELETE on `paper_trades`. Queue the second run instead of cancelling the
+# first, which could otherwise be interrupted mid-write.
+concurrency:
+  group: forward-tests
+  cancel-in-progress: false
+
+jobs:
+  evening:
+    name: Load · advance · check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      UPSTOX_API_TOKEN: ${{ secrets.UPSTOX_API_TOKEN }}
+      UPSTOX_TOKEN_EXPIRES_ON: ${{ vars.UPSTOX_TOKEN_EXPIRES_ON }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Every step runs even if an earlier one failed, and the job fails at the
+      # end. Fail-fast would report the first problem and hide the rest — on a
+      # job that runs unattended once a day, one run should tell you everything
+      # that is wrong, not the first thing.
+
+      - name: Load market data
+        id: load
+        continue-on-error: true
+        # One year, not the full backfill. The loader upserts, so a rolling year
+        # each evening both records today and repairs any gap in the last
+        # twelve months — roughly 1,500 rows across the universe.
+        run: npm run load-market-data -- --years 1
+
+      - name: Advance running forward tests
+        id: advance
+        continue-on-error: true
+        # Exits non-zero if any test halted. A halted test has a ledger that
+        # disagrees with its replay, which stops that test rather than
+        # compounding the disagreement.
+        run: npm run advance-forward-tests
+
+      - name: Check the pipeline is alive
+        id: health
+        continue-on-error: true
+        # The case the two steps above cannot see: both succeeded and nothing
+        # happened. Stale bars, an overdue test still marked RUNNING, a vendor
+        # token about to expire.
+        run: npm run check-forward-tests
+
+      - name: Fail if any step failed
+        if: >-
+          steps.load.outcome == 'failure' ||
+          steps.advance.outcome == 'failure' ||
+          steps.health.outcome == 'failure'
+        run: |
+          echo "load:    ${{ steps.load.outcome }}"
+          echo "advance: ${{ steps.advance.outcome }}"
+          echo "health:  ${{ steps.health.outcome }}"
+          exit 1

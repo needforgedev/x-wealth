@@ -83,6 +83,7 @@ prohibits.
 - [x] **D-09** **Forward-test engine** — `src/domain/forward-test.ts` + `src/server/forward-test/{advance,replay}.ts`; DB-enforced parameter freeze proven by 14 raw-SQL attacks (`npm run verify-freeze`)
 - [x] **D-10** **Market data layer** — `MarketDataSource` interface, EOD source, Upstox v3 adapter, conformance suite, universe + catalogue, `migration 0008`
 - [x] **D-11** 7,514 lines of tested domain logic in `src/domain/`
+- [x] **D-12** **Evening scheduler** — `.github/workflows/forward-tests.yml` (load → advance → health check, weekdays 16:45 IST) plus `npm run check-forward-tests`, which catches the case the jobs themselves cannot: succeeded, and nothing happened
 
 ### Not built
 
@@ -280,7 +281,7 @@ Each needs a date to count as decided. Recommendations are marked ⭐.
 | **AD-06** | Money & prices | **Money = integer paise, prices = fixed-precision, both branded.** `src/domain/money.ts`, 23 tests including the float traps | ✅ **Settled in code** |
 | **AD-07** | Time | **UTC stored, IST displayed, 09:15–15:30, holiday-aware.** `src/domain/session.ts`, 25 tests | ✅ **Settled in code** |
 | **AD-08** | Market data | **`MarketDataSource` interface + conformance suite.** EOD and Upstox implementations both pass it | ✅ **Settled in code** |
-| **AD-09** | Scheduler | `npm run advance-forward-tests` exists but nothing durable invokes it. **A forward test that silently stops advancing is worse than one that never started** | ☐ Open |
+| **AD-09** | Scheduler | **GitHub Actions, `.github/workflows/forward-tests.yml`, weekdays 16:45 IST.** Chosen over a Vercel cron because both jobs are already `tsx` entry points that Actions runs unchanged — no API route duplicating a script — and because the loader makes six sequential vendor calls before it writes, which is the wrong shape for a serverless timeout | ✅ **Decided 26 Aug 2026** |
 | **AD-10** | KYC document storage | Private bucket, signed URLs, access-logged | ➖ **Moot** — no KYC in v2 (W2 dropped). Retain the pattern for any future PII |
 | **AD-11** | AI provider | ⭐ Claude, structured tool output (not prose), every call persisted. **No provider dependency is installed yet** | ☐ Open — **now on the critical path** |
 | **AD-12** | Test stack | **Vitest** + Playwright ad hoc | ✅ **Decided 19 Aug 2026** |
@@ -289,7 +290,7 @@ Each needs a date to count as decided. Recommendations are marked ⭐.
 | **AD-15** | ~~Investor or Alpha onboarding canonical?~~ | — | ➖ **Superseded by AD-18** — both were built for personas that no longer exist |
 | **AD-16** | ~~Defer AI critique?~~ | — | ➖ **Superseded by AD-21** |
 | **AD-17** | **What is Phase 1?** `CLAUDE.md` §7 runs 0, 2, 3, 4, 5, 6. ⭐ Read it as foundation + market data (W1, W3) · or renumber the phases | ☐ Open |
-| **AD-18** | **What happens to the v1 UI?** ~40 routes and the whole `/alpha` tree serve a prohibited product. ⭐ Delete on a branch, tag the commit before it, keep `/screens` as a Figma index only · archive in-tree behind a flag · leave it | ☐ Open |
+| **AD-18** | **What happens to the v1 UI?** **Deleted on `v2-teardown`, tagged `v1-marketplace-final` first.** `/screens` went with it rather than being kept — roughly forty of its ~53 links pointed at removed routes, and a broken index is worse than none | ✅ **Decided 27 Aug 2026** |
 | **AD-19** | **How is the pre-lock holdout protected?** ⭐ Holdout is sealed until the parameter lock and revealed exactly once, in the attack report · shown every run and merely labelled · per-strategy iteration budget. See **B-11** | ☐ Open |
 | **AD-20** | **`ai_critiques` → `ai_interactions`.** v2 §9 widens it: `user_id`, `context_type`, applies to hypothesis / compile / critique / post-mortem / digest, not just forward tests. ⭐ New table + migrate the (currently empty) old one · widen in place | ☐ Open |
 | **AD-21** | **AI sequencing.** The AI is now four modules, not one. ⭐ Build W15 first — it is the smallest surface, it forces the `ai_interactions` logging discipline early, and every later module reuses that plumbing · build W7 first · build them together | ☐ Open |
@@ -388,7 +389,7 @@ Unchanged by the pivot. All nine still apply.
 - [~] **W3-06** Historical load — daily verified back to 2000-01-03, 1-minute since Jan 2022 at exactly 375 bars/session. **Coverage across the full intended universe not yet confirmed**
 - [ ] **W3-07** Lot sizes and circuit-limit data for fill realism. **Open: Upstox `tick_size` units** — reports 10.0 for RELIANCE, which is neither paise nor 1/10000 rupee. `universe.ts` deliberately ignores it and sets ₹0.01 from observed granularity. **Settle before W6-05 consumes it.** Note also that back-adjusted prices are not tick-aligned at all — the engine must never assume alignment
 - [ ] **W3-09** Record the data answer in this file → closes **B-6**
-- [ ] **W3-11** **New.** The Upstox analytics token **expires 2027-08-21**. A silent expiry stops forward-test evaluation dead, and a forward test that stops advancing is a corrupted record, not a paused one. Alert at 60 days
+- [x] **W3-11** **New — done 26 Aug 2026.** The Upstox analytics token **expires 2027-08-21** and the API does not report it, so the date is recorded by hand as `UPSTOX_TOKEN_EXPIRES_ON`. `check-forward-tests` warns at 60 days and **fails the job at 14** — a red run is what gets acted on. Both variables are now documented in `.env.example`, which had no market-data section at all
 
 ### W4 — Strategy Builder *(§7.3)*
 
@@ -434,7 +435,8 @@ Unchanged by the pivot. All nine still apply.
 - [x] **W6-09** Completion → immutable result record
 - [x] **W6-13** **New — done.** Replay, never incremental state. `evaluateForwardTest` re-runs the whole window each evening and diffs against `paper_trades`. The append-only ledger stays the single source of truth, a missed evening self-heals, and running twice is a no-op — which is what makes retries safe against append-only tables
 - [x] **W6-14** **New — done.** `progress.standing` vs `progress.metrics`: a *running* test has two net-return figures and **only `standing` may be displayed**, because the curve values open positions without paying their exit charges. Verified on a real 654-session window: −9.1709% against the curve's −9.1366%. W7 and W8 both read forward-test results and `metrics` is the field they will reach for first
-- [~] **W6-04** Scheduled evaluation — the job exists; **nothing durable runs it** (AD-09)
+- [x] **W6-04** **Scheduled evaluation — done 26 Aug 2026.** `.github/workflows/forward-tests.yml` runs load → advance → health check weekdays at 16:45 IST, serialised by a `concurrency` group so two runs can never write to append-only tables at once. Every step runs even when an earlier one fails, and the job fails at the end: on an unattended daily job, one run should report everything that is wrong rather than the first thing. **Gotcha recorded in the workflow header: GitHub disables scheduled workflows after 60 days without a commit** — a 60-session window and a quiet repository are exactly the combination that would stop the scheduler at the point the record matters most
+- [x] **W6-16** **New — done. `npm run check-forward-tests`**, the alarm half. The two jobs already exit non-zero when they crash; this catches what neither can see — **everything succeeded and nothing happened**. Checks bar staleness per instrument, running tests overdue past `planned_end_at`, and vendor-token expiry. Verified in both directions on the live database: six stale series → 6 problems, exit 1; after a load → *pipeline healthy*, exit 0. **Warnings deliberately do not fail the run**, and zero trades on an evening is not a fault — §7.13's rule that an alarm which always finds something stops being read applies to our own infrastructure too
 - [~] **W6-07** Live equity curve and running metrics — `npm run verify-standing` proves the figures against real bars
 - [ ] **W6-05** Fill realism: slippage, liquidity caps, **circuit-limit handling, gap-through fills, no fills outside market hours, intraday square-off before close**. Depends on W3-07
 - [~] **W6-06** Session + holiday awareness — real NSE calendar still outstanding (W1-13)
@@ -478,9 +480,9 @@ Unchanged by the pivot. All nine still apply.
 The v1 items here were about invariant violations. Most are now moot because the
 component itself is going.
 
-- [-] **W10-01** ~~Remove `RatingRing`~~ — goes with the group cards (W10-15)
-- [-] **W10-02** ~~Strip hardcoded return figures from group fixtures~~ — goes with the fixtures
-- [-] **W10-03** ~~Remove the real-format SEBI number~~ — goes with `lib/subscription.ts`
+- [x] **W10-01** Removed with the group cards, 27 Aug 2026 (W10-15)
+- [x] **W10-02** Done 27 Aug 2026 — `aum: "345%"`, `accuracy: "94%"`, `rating: 4.9` and `Revenue ₹230K` went with `lib/{groups,advisor,subscription}.ts`
+- [x] **W10-03** Done 27 Aug 2026 — `INP000005847` went with `lib/subscription.ts`
 - [-] **W10-04** ~~Cut free-form group chat~~ — goes with groups
 - [-] **W10-05** ~~Fix the "Acuracy" typo~~ — moot
 - [-] **W10-08** ~~Strategy discovery~~ — **prohibited.** Cross-user strategy visibility is §8.5
@@ -488,13 +490,15 @@ component itself is going.
 - [ ] **W10-06** **Teardown migration.** Drop the distribution schema — groups, `group_strategies`, `group_invitations`, subscriptions, pricing tiers, signals, `market_views` — **unwinding each table's append-only trigger and grant in the same transaction**, or `db:verify` reports orphans forever
 - [ ] **W10-07** Resolve any remaining v1 doc contradictions — largely moot now that `CLAUDE.md` is the single source
 - [ ] **W10-09** Ban list as a lint rule: no "verified", "top-rated", "high-performing", "best" copy anywhere (§8.7). **Still needed — this one survives the pivot intact**
-- [ ] **W10-10** Replace the `/alpha` placeholder assets — ➖ moot if `/alpha` goes (AD-18)
+- [-] **W10-10** ~~Replace the `/alpha` placeholder assets~~ — moot, `/alpha` is gone (AD-18)
 - [ ] **W10-12** **New.** Delete or rename `x-wealth-product.md`. It is byte-identical to `CLAUDE-v1-ARCHIVED-advisor-marketplace.md` and its name reads as current
 - [ ] **W10-13** **New.** Rewrite `execution-plan.md` for v2, or archive it. It plans RA acquisition, revenue share and gates G1–G7 against a business that no longer exists
 - [ ] **W10-14** **New.** Re-point `x-wealth-product.md §5.x` citations across `src/db/schema/*` at `CLAUDE.md` §8. They currently resolve to a dead document
-- [ ] **W10-15** **New.** Remove the prohibited routes — `/groups/*`, `/group-invitations`, `/discover*`, `/chats`, `/signals`, `/investor/*`, `/advisor/{groups,create-group,signals,chats,pricing}`, `/portfolio/groups`, `/profile/favourites`, `/account/{choose,switch}`, and the `/alpha` tree per AD-18
-- [ ] **W10-16** **New.** Remove `src/components/{groups,chat}`, `src/server/actions/{group,invitation,signal}.ts`, and the group/signal query modules
-- [ ] **W10-17** **New.** Delete `src/domain/signal.ts` and its tests. A signal in v2 is `signal_events` — an internal record of what a strategy fired, never something delivered to another person
+- [x] **W10-15** **Done 27 Aug 2026.** Removed the prohibited routes — `/groups/*`, `/group-invitations`, `/discover*`, `/chats`, `/signals`, `/investor/{discover,groups}`, `/advisor/{groups,create-group,signals,chats,pricing}`, `/portfolio/groups`, `/profile/favourites`, `/account/{choose,switch}`, and the `/alpha` tree per AD-18
+- [x] **W10-16** **Done 27 Aug 2026.** Removed `src/components/{groups,chat}`, `src/server/actions/{group,invitation,signal}.ts`, and the group/signal query modules
+- [x] **W10-17** **Done 27 Aug 2026.** Deleted `src/domain/signal.ts` and its 26 tests. A signal in v2 is `signal_events` — an internal record of what a strategy fired, never something delivered to another person
+- [x] **W10-19** **New — done 27 Aug 2026.** Three repairs the removals forced, each a holding shape until W24: `BottomNav` pointed three of five tabs at deleted routes and is now two, centred rather than spread on five-item spacing; `/investor/home` was groups and invitations end to end and is now an honest stub, because `investor-onboarding.ts` still redirects there and it cannot vanish before the personas merge; `_shared.ts` re-exported `SignalTarget` from the deleted signal domain, so it is inlined and marked temporary — it goes with the `signals` table in W10-06
+- [ ] **W10-20** **New.** `/investor/home` is a stub with nothing in it. It disappears at W24-07, when the trader's landing page becomes their strategy list. **Do not add content to it in the meantime** — a screen that fills its own empty space starts implying a capability that is not there
 - [ ] **W10-18** **New.** Migrations `0006` and `0007` built the group slice. They stay in history (that is how migrations work); the teardown is a *new* forward migration, never an edit to a shipped one
 
 ### W11 — Investor side
@@ -691,8 +695,9 @@ app. *Every one of these goes up when discipline goes down.*
 | Classified as an algo provider needing empanelment | High | Assume it is required; it comes bundled with the broker partnership and is a far lower bar than RA registration | B-2 |
 | **Pre-lock iteration makes the lock cosmetic** | **Fatal (product integrity)** | Seal the holdout; instrument iteration count | B-11, MET-03, AD-19 |
 | Backtest engine subtly wrong | **Fatal (reputational)** | Hand-calculation reconciliation + external quant + intrabar honesty | W5-08, W5-13, W0-10 |
-| Upstox token expires silently mid-forward-test | High | Alert at 60 days; a stalled test is a corrupted record | W3-11 |
-| No durable scheduler | High | A forward test that stops advancing is worse than one never started | AD-09 |
+| Upstox token expires silently mid-forward-test | High | ✅ Mitigated — warn at 60 days, fail the job at 14 | W3-11 |
+| No durable scheduler | High | ✅ Mitigated — evening workflow plus a health check that catches "succeeded and nothing happened" | AD-09, W6-04, W6-16 |
+| GitHub disables the schedule after 60 days of repo inactivity | Medium | Documented in the workflow header. Bites only if the repo goes quiet *while* a window is running | W6-04 |
 | Real-time data unavailable pre-partnership | Medium | Data abstraction layer; EOD fallback costs intraday, keeps positional | W3, B-1 |
 | Zerodha ships this inside Kite | High | Streak already exists and has no AI. Speed is the only defence | — |
 | Regulation changes mid-build | Medium | Quarterly legal review retainer | W14-04 |
@@ -724,9 +729,12 @@ hardens, not after.**
 
 Two things should happen before anything else, and neither is blocked:
 
-1. **Start a real forward test this month.** The engine works. Sixty sessions is
-   twelve to fourteen calendar weeks that run in parallel with the build or
-   serially after it — that choice is worth a quarter.
+1. **Start a real forward test this month.** The engine works, and as of 26 Aug
+   the scheduler that keeps one honest works too — so this is now an afternoon
+   of authoring, not an engineering task. Sixty sessions is twelve to fourteen
+   calendar weeks that run in parallel with the build or serially after it, and
+   that choice is worth a quarter. **This is the next thing that should happen**
+   (W6-15).
 2. **Fifteen conversations with retail traders**, asking the uncomfortable
    question rather than the flattering one. Not *"would you use an AI strategy
    builder"* — everyone says yes. **"Would you accept not being allowed to
@@ -743,6 +751,8 @@ before more work lands on a schema with the wrong shape.
 
 | Date | Change |
 |---|---|
+| **27 Aug 2026** | **Distribution surface removed (W10-01, W10-02, W10-03, W10-15, W10-16, W10-17, W10-19; AD-18 closed).** 104 files, ~9,200 deletions on branch `v2-teardown`, tagged `v1-marketplace-final` first. Gone: groups, invitations, subscriptions and payments, signal composition and feeds, discovery, chat, the `/alpha` second pass, persona switching, the `/screens` Figma index, and the fixture modules carrying the hardcoded `aum`/`accuracy`/`rating` figures and the real-format SEBI number. Kept deliberately: `/portfolio` and `/profile` have no cross-user surface — superseding them is a W24/W19 scope question, not a legal one — and the onboarding flows are persona-specific rather than prohibited. **The schema is untouched on purpose**: dropping the distribution tables must unwind each one's append-only trigger and revoked grant in the same transaction (W10-06). 301 tests green, typecheck, lint and build clean. |
+| **26 Aug 2026** | **Evening scheduler live (AD-09, W6-04, W6-16, W3-11).** `.github/workflows/forward-tests.yml` runs load → advance → health check on weekdays at 16:45 IST, serialised so two runs cannot write to append-only tables at once. New `scripts/check-forward-test-health.mts` is the alarm the other two jobs cannot raise: they exit non-zero when they crash, but a stale vendor feed makes a stalled test look exactly like a quiet market. It found real staleness on its first run — bars six days old — and went green after a load. **The 60-session clock can now start (W6-15).** |
 | **26 Aug 2026** | **Rewritten for the v2 direction.** `CLAUDE.md` replaces `x-wealth-product.md` as the source of truth: single-persona AI strategy lab, no advisors, no investors, no distribution. **Dropped:** W2 (SEBI KYC), W9 (PaRRVA), W11 (investor), W12 (groups/signals), W13 (payments/attribution), blockers B-3/B-4/B-8, milestones M0–M8, decisions AD-14/15/16. **Added:** W15 hypothesis workbench, W16 event awareness, W17 annotations, W18 adversarial suite, W19 portfolio risk, W20 trigger proximity, W21 execution gap, W22 review cadence, W23 broker integration, W24 identity collapse, W25 billing; milestones N0–N8; blockers B-9/B-10/**B-11**; decisions AD-17…AD-22. **Restated:** B-1, B-2, B-5. Current state re-audited — 327 tests across 18 files, 9 migrations, backtest + forward-test engines live against real Upstox bars, AI at zero. |
 | 24 Aug 2026 | **W6 forward-test engine live.** One execution model shared by both engines (`session-step.ts`), replay-not-cache each evening, `npm run verify-freeze` landing 14 raw-SQL attacks on the parameter freeze, and the `standing` vs `metrics` distinction — a running test has two net-return figures and only one has paid its exit charges. Verified on a real 654-session window. |
 | 21 Aug 2026 | **Market data layer live.** Upstox chosen for OHLCV: adjusted series verified across the RELIANCE 1:1 bonus, daily back to 2000, 1-minute since 2022 at 375 bars/session. IndianAPI is close-only and demoted to corporate-action events. Open: `tick_size` units, redistribution terms, survivorship universe. |

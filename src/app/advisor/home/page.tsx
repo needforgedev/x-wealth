@@ -45,19 +45,14 @@ export default async function AdvisorHomePage() {
           </Link>
         </div>
 
-        <Link
-          href="/advisor/groups"
-          className="mt-6 flex items-center gap-3 rounded-[8px] border border-line p-4 hover:border-brand"
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-semibold text-ink">Groups</span>
-            <span className="mt-[2px] block text-[13px] text-muted">
-              Distribute strategies, post calls and views.
-            </span>
-          </span>
-          <span className="shrink-0 text-[13px] font-semibold text-brand">Open</span>
-        </Link>
+        {/*
+          The Groups card stood here — "distribute strategies, post calls and
+          views". Removed rather than relinked: distribution is not a feature
+          this product defers, it is one `CLAUDE.md` §8.5 prohibits, so there is
+          no destination to point it at now or later.
 
+          Nothing replaces it. The strategy list below is the whole screen.
+        */}
         <div className="mt-6 flex items-center justify-between">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
             Strategies
