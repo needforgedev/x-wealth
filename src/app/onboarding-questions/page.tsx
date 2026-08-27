@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { canOpenInvestorStep, nextInvestorPath } from "@/domain/investor-onboarding";
+import { canOpenStep, nextPath } from "@/domain/onboarding";
 import { currentIdentity } from "@/server/identity";
 import { ExperienceForm } from "./ExperienceForm";
 
@@ -8,15 +8,15 @@ export const dynamic = "force-dynamic";
 
 export default async function OnboardingQuestionsPage() {
   const identity = await currentIdentity();
-  if (!identity?.investor) redirect("/");
+  if (!identity?.user) redirect("/");
 
-  const investor = identity.investor;
-  if (!canOpenInvestorStep(investor, "EXPERIENCE")) redirect(nextInvestorPath(investor));
+  const user = identity.user;
+  if (!canOpenStep(user, "EXPERIENCE")) redirect(nextPath(user));
 
   return (
     <ExperienceForm
-      initial={investor.experienceLevel}
-      nextHref={nextInvestorPath({ ...investor, experienceLevel: "BEGINNER" })}
+      initial={user.experienceLevel}
+      nextHref={nextPath({ ...user, experienceLevel: "BEGINNER" })}
     />
   );
 }

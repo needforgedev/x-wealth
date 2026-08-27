@@ -22,7 +22,7 @@ export async function listRunningForwardTests() {
       strategyId: strategies.id,
       strategyName: strategies.name,
       versionNo: strategyVersions.versionNo,
-      advisorId: strategies.advisorId,
+      advisorId: strategies.userId,
     })
     .from(forwardTests)
     .innerJoin(strategyVersions, eq(strategyVersions.id, forwardTests.strategyVersionId))
@@ -41,7 +41,7 @@ export async function tradesForForwardTest(forwardTestId: string) {
 }
 
 /** One test with its strategy, scoped to the advisor who owns it. */
-export async function loadForwardTestForAdvisor(forwardTestId: string, advisorId: string) {
+export async function loadForwardTestForUser(forwardTestId: string, userId: string) {
   const [row] = await db()
     .select({
       test: forwardTests,
@@ -55,7 +55,7 @@ export async function loadForwardTestForAdvisor(forwardTestId: string, advisorId
     .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
     // Ownership in the WHERE clause rather than checked afterwards: another
     // advisor's test is not found, rather than found and then refused.
-    .where(and(eq(forwardTests.id, forwardTestId), eq(strategies.advisorId, advisorId)))
+    .where(and(eq(forwardTests.id, forwardTestId), eq(strategies.userId, userId)))
     .limit(1);
 
   return row ?? null;
@@ -68,12 +68,12 @@ export async function loadForwardTestForAdvisor(forwardTestId: string, advisorId
  * be tidied away; it is the denominator that makes a completed one mean
  * something (`x-wealth-product.md` §5.2, PRD §5.6).
  */
-export async function listForwardTestsForStrategy(strategyId: string, advisorId: string) {
+export async function listForwardTestsForStrategy(strategyId: string, userId: string) {
   return db()
     .select({ test: forwardTests, versionNo: strategyVersions.versionNo })
     .from(forwardTests)
     .innerJoin(strategyVersions, eq(strategyVersions.id, forwardTests.strategyVersionId))
     .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
-    .where(and(eq(strategyVersions.strategyId, strategyId), eq(strategies.advisorId, advisorId)))
+    .where(and(eq(strategyVersions.strategyId, strategyId), eq(strategies.userId, userId)))
     .orderBy(desc(forwardTests.createdAt));
 }

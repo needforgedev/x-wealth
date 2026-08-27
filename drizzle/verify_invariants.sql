@@ -27,10 +27,10 @@ BEGIN;
 INSERT INTO auth.users(id) VALUES ('00000000-0000-0000-0000-0000000000ff')
   ON CONFLICT DO NOTHING;
 
-INSERT INTO advisors(id, user_id, sebi_registration_no) VALUES
-  ('a0000000-0000-0000-0000-0000000000ff', '00000000-0000-0000-0000-0000000000ff', 'INH_VERIFY_ONLY');
+INSERT INTO users(id, auth_user_id, contact_name) VALUES
+  ('a0000000-0000-0000-0000-0000000000ff', '00000000-0000-0000-0000-0000000000ff', 'verify');
 
-INSERT INTO strategies(id, advisor_id, name, segment, timeframe) VALUES
+INSERT INTO strategies(id, user_id, name, segment, timeframe) VALUES
   ('50000000-0000-0000-0000-0000000000ff', 'a0000000-0000-0000-0000-0000000000ff', 'verify', 'EQUITY', '1d');
 
 INSERT INTO strategy_versions(id, strategy_id, version_no, definition) VALUES

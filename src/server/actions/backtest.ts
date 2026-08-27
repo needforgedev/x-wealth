@@ -13,7 +13,7 @@ import { validateStrategyDefinition, type StrategyDefinition } from "@/domain/st
 import { toSymbol } from "@/domain/symbol";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
-import { NotAuthorisedError, requirePublishingRights } from "@/server/identity";
+import { NotAuthorisedError, requireUser } from "@/server/identity";
 import type { ActionResult } from "@/server/actions/auth";
 
 /**
@@ -42,21 +42,21 @@ export async function runBacktestForVersion(input: {
   strategyVersionId: string;
 }): Promise<ActionResult<{ runId: string }>> {
   try {
-    const { advisor } = await requirePublishingRights();
+    const { user } = await requireUser();
 
     const [row] = await db()
       .select({
         versionId: strategyVersions.id,
         definition: strategyVersions.definition,
         strategyId: strategies.id,
-        advisorId: strategies.advisorId,
+        advisorId: strategies.userId,
       })
       .from(strategyVersions)
       .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
       .where(eq(strategyVersions.id, input.strategyVersionId))
       .limit(1);
 
-    if (!row || row.advisorId !== advisor.id) {
+    if (!row || row.advisorId !== user.id) {
       throw new NotAuthorisedError("No such strategy version.");
     }
 
@@ -119,7 +119,7 @@ export async function runBacktestForVersion(input: {
       })
       .returning({ id: backtestRuns.id });
 
-    revalidatePath(`/advisor/strategies/${row.strategyId}`);
+    revalidatePath(`/strategies/${row.strategyId}`);
     return { ok: true, data: { runId: run.id } };
   } catch (error) {
     return { ok: false, error: messageFor(error) };

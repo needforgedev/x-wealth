@@ -1,7 +1,7 @@
 import { date, index, integer, pgTable, uuid } from "drizzle-orm/pg-core";
 
 import { createdAt, price, symbol, timestampTz } from "./_shared";
-import { investors } from "./investors";
+import { users } from "./users";
 
 /**
  * Manually entered holdings. There is no broker integration and no order
@@ -27,9 +27,9 @@ export const portfolioEntries = pgTable(
   "portfolio_entries",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    investorId: uuid("investor_id")
+    userId: uuid("user_id")
       .notNull()
-      .references(() => investors.id, { onDelete: "restrict" }),
+      .references(() => users.id, { onDelete: "restrict" }),
 
     symbol: symbol().notNull(),
     qty: integer("qty").notNull(),
@@ -40,6 +40,6 @@ export const portfolioEntries = pgTable(
     updatedAt: timestampTz("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    index("portfolio_entries_investor_id_idx").on(t.investorId),
+    index("portfolio_entries_user_id_idx").on(t.userId),
   ],
 );

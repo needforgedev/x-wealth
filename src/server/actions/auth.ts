@@ -3,9 +3,8 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { advisors, investors } from "@/db/schema";
-import { nextAdvisorPath } from "@/domain/advisor-onboarding";
-import { nextInvestorPath } from "@/domain/investor-onboarding";
+import { users } from "@/db/schema";
+import { nextPath } from "@/domain/onboarding";
 import { normalisePhone } from "@/domain/phone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -63,19 +62,19 @@ export async function sendOtp(
   return { ok: false, error: "Could not send the code. Try again in a moment." };
 }
 
-export type Role = "ADVISOR" | "INVESTOR";
-
 /**
- * Verify the code and make sure the user has a profile row.
+ * Verify the code and make sure the account has a profile row.
  *
- * `role` only takes effect the first time — an existing advisor signing in
- * again does not become an investor because a different tab was open.
+ * There is no `role` argument any more. v2 has one persona (`CLAUDE.md` §6), so
+ * there is nothing to choose at sign-up and nothing that could be chosen wrong
+ * — the old signature took ADVISOR or INVESTOR from whichever tab the person
+ * happened to be on, and had to defend against a returning advisor being
+ * re-created as an investor.
  */
 export async function verifyOtp(
   rawPhone: string,
   token: string,
-  role: Role,
-): Promise<ActionResult<{ role: Role; next: string }>> {
+): Promise<ActionResult<{ next: string }>> {
   const phone = normalisePhone(rawPhone);
   if (!phone) return { ok: false, error: "Enter a valid 10-digit mobile number." };
 
@@ -96,7 +95,7 @@ export async function verifyOtp(
   if (isDevAuthEnabled() && code === devOtpCode()) {
     const userId = await findOrCreateUserByPhone(phone);
     await createDevSession(userId);
-    return { ok: true, data: await ensureProfile(userId, role) };
+    return { ok: true, data: await ensureProfile(userId, phone) };
   }
 
   const supabase = await createSupabaseServerClient();
@@ -110,51 +109,35 @@ export async function verifyOtp(
   const user = await currentUser();
   if (!user) return { ok: false, error: "Signed in, but the session did not stick. Try again." };
 
-  return { ok: true, data: await ensureProfile(user.id, role) };
+  return { ok: true, data: await ensureProfile(user.id, phone) };
 }
 
 /**
  * Create the profile row on first sign-in, and say where the person belongs.
  *
  * The destination is computed from the record rather than hardcoded, because
- * this same screen is both sign-up and sign-in — a returning verified advisor
- * must not be dropped back at the first onboarding step.
+ * this screen is both sign-up and sign-in. The bug this guards against was real
+ * and shipped once: a fully set-up account was sent back through every
+ * onboarding question on each sign-in, because the OTP screen pushed a fixed
+ * destination.
  *
- * An advisor exists here from sign-up with `verification_status = UNSUBMITTED`
- * and no registration number — the schema permits exactly that state, and a
- * CHECK stops the record leaving it without one (migration 0002).
+ * `phone` is stored on first creation only. Supabase Auth owns the number for
+ * authentication; this copy is for display, and re-writing it on every sign-in
+ * would let a stale value overwrite a corrected one.
  */
-async function ensureProfile(
-  userId: string,
-  requested: Role,
-): Promise<{ role: Role; next: string }> {
+async function ensureProfile(authUserId: string, phone: string): Promise<{ next: string }> {
   const database = db();
 
-  const [existingAdvisor] = await database
+  const [existing] = await database
     .select()
-    .from(advisors)
-    .where(eq(advisors.userId, userId))
+    .from(users)
+    .where(eq(users.authUserId, authUserId))
     .limit(1);
-  if (existingAdvisor) {
-    return { role: "ADVISOR", next: nextAdvisorPath(existingAdvisor) };
-  }
 
-  const [existingInvestor] = await database
-    .select()
-    .from(investors)
-    .where(eq(investors.userId, userId))
-    .limit(1);
-  if (existingInvestor) {
-    return { role: "INVESTOR", next: nextInvestorPath(existingInvestor) };
-  }
+  if (existing) return { next: nextPath(existing) };
 
-  if (requested === "ADVISOR") {
-    const [created] = await database.insert(advisors).values({ userId }).returning();
-    return { role: "ADVISOR", next: nextAdvisorPath(created) };
-  }
-
-  const [createdInvestor] = await database.insert(investors).values({ userId }).returning();
-  return { role: "INVESTOR", next: nextInvestorPath(createdInvestor) };
+  const [created] = await database.insert(users).values({ authUserId, phone }).returning();
+  return { next: nextPath(created) };
 }
 
 export async function signOut(): Promise<ActionResult> {

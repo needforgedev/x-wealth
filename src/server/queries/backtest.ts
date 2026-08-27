@@ -9,7 +9,7 @@ import { backtestRuns, strategies, strategyVersions } from "@/db/schema";
  * **Deliberately not in `src/server/actions/`, and deliberately without
  * `"use server"`.** Every export of a `"use server"` file is compiled into a
  * callable endpoint — an action id plus a POST route that anyone able to send
- * the request can reach. A read like `loadRunForAdvisor(runId, advisorId)`
+ * the request can reach. A read like `loadRunForUser(runId, userId)`
  * living there would be an access-control hole with a polite signature: the
  * caller supplies the advisor id, so supplying somebody else's would return
  * somebody else's results.
@@ -27,7 +27,7 @@ import { backtestRuns, strategies, strategyVersions } from "@/db/schema";
  * refused — no difference to the caller, and nothing leaked by timing or by an
  * error message that distinguishes the two.
  */
-export async function loadRunForAdvisor(runId: string, advisorId: string) {
+export async function loadRunForUser(runId: string, userId: string) {
   const [row] = await db()
     .select({
       run: backtestRuns,
@@ -40,7 +40,7 @@ export async function loadRunForAdvisor(runId: string, advisorId: string) {
     .from(backtestRuns)
     .innerJoin(strategyVersions, eq(strategyVersions.id, backtestRuns.strategyVersionId))
     .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
-    .where(and(eq(backtestRuns.id, runId), eq(strategies.advisorId, advisorId)))
+    .where(and(eq(backtestRuns.id, runId), eq(strategies.userId, userId)))
     .limit(1);
 
   return row ?? null;
@@ -54,7 +54,7 @@ export async function loadRunForAdvisor(runId: string, advisorId: string) {
  * dislikes a result appends another run, and both stay on the record
  * (`x-wealth-product.md` §5.1, PRD §5.6).
  */
-export async function listRunsForStrategy(strategyId: string, advisorId: string) {
+export async function listRunsForStrategy(strategyId: string, userId: string) {
   return db()
     .select({
       run: backtestRuns,
@@ -63,6 +63,6 @@ export async function listRunsForStrategy(strategyId: string, advisorId: string)
     .from(backtestRuns)
     .innerJoin(strategyVersions, eq(strategyVersions.id, backtestRuns.strategyVersionId))
     .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
-    .where(and(eq(strategyVersions.strategyId, strategyId), eq(strategies.advisorId, advisorId)))
+    .where(and(eq(strategyVersions.strategyId, strategyId), eq(strategies.userId, userId)))
     .orderBy(asc(strategyVersions.versionNo), desc(backtestRuns.createdAt));
 }

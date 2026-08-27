@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { canOpenInvestorStep, nextInvestorPath } from "@/domain/investor-onboarding";
+import { canOpenStep, nextPath } from "@/domain/onboarding";
 import { currentIdentity } from "@/server/identity";
 import { RiskForm } from "./RiskForm";
 
@@ -8,10 +8,10 @@ export const dynamic = "force-dynamic";
 
 export default async function RiskDisclosurePage() {
   const identity = await currentIdentity();
-  if (!identity?.investor) redirect("/");
+  if (!identity?.user) redirect("/");
 
-  const investor = identity.investor;
-  if (!canOpenInvestorStep(investor, "RISK")) redirect(nextInvestorPath(investor));
+  const user = identity.user;
+  if (!canOpenStep(user, "RISK")) redirect(nextPath(user));
 
   return <RiskForm />;
 }

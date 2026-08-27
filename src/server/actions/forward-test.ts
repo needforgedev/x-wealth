@@ -12,7 +12,7 @@ import { validateStrategyDefinition, type StrategyDefinition } from "@/domain/st
 import { toSymbol } from "@/domain/symbol";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
-import { NotAuthorisedError, requirePublishingRights } from "@/server/identity";
+import { NotAuthorisedError, requireUser } from "@/server/identity";
 import type { ActionResult } from "@/server/actions/auth";
 
 /**
@@ -73,21 +73,21 @@ export async function startForwardTest(input: {
   }
 
   try {
-    const { advisor } = await requirePublishingRights();
+    const { user } = await requireUser();
 
     const [row] = await db()
       .select({
         versionId: strategyVersions.id,
         definition: strategyVersions.definition,
         strategyId: strategies.id,
-        advisorId: strategies.advisorId,
+        advisorId: strategies.userId,
       })
       .from(strategyVersions)
       .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
       .where(eq(strategyVersions.id, input.strategyVersionId))
       .limit(1);
 
-    if (!row || row.advisorId !== advisor.id) {
+    if (!row || row.advisorId !== user.id) {
       throw new NotAuthorisedError("No such strategy version.");
     }
 
@@ -147,7 +147,7 @@ export async function startForwardTest(input: {
       return draft.id;
     });
 
-    revalidatePath(`/advisor/strategies/${row.strategyId}`);
+    revalidatePath(`/strategies/${row.strategyId}`);
     return { ok: true, data: { forwardTestId } };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
@@ -177,14 +177,14 @@ export async function abandonForwardTest(input: {
   }
 
   try {
-    const { advisor } = await requirePublishingRights();
+    const { user } = await requireUser();
 
     const [row] = await db()
       .select({ id: forwardTests.id, status: forwardTests.status, strategyId: strategies.id })
       .from(forwardTests)
       .innerJoin(strategyVersions, eq(strategyVersions.id, forwardTests.strategyVersionId))
       .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
-      .where(and(eq(forwardTests.id, input.forwardTestId), eq(strategies.advisorId, advisor.id)))
+      .where(and(eq(forwardTests.id, input.forwardTestId), eq(strategies.userId, user.id)))
       .limit(1);
 
     if (!row) throw new NotAuthorisedError("No such forward test.");
@@ -202,8 +202,8 @@ export async function abandonForwardTest(input: {
       })
       .where(eq(forwardTests.id, row.id));
 
-    revalidatePath(`/advisor/forward-tests/${row.id}`);
-    revalidatePath(`/advisor/strategies/${row.strategyId}`);
+    revalidatePath(`/forward-tests/${row.id}`);
+    revalidatePath(`/strategies/${row.strategyId}`);
     return { ok: true, data: undefined };
   } catch (error) {
     return { ok: false, error: messageFor(error) };

@@ -11,7 +11,7 @@ import {
   type StrategyDefinition,
 } from "@/domain/strategy";
 import { loadCatalogue } from "@/server/market-data/catalogue";
-import { NotAuthorisedError, requirePublishingRights } from "@/server/identity";
+import { NotAuthorisedError, requireUser } from "@/server/identity";
 import type { ActionResult } from "@/server/actions/auth";
 
 /**
@@ -20,7 +20,7 @@ import type { ActionResult } from "@/server/actions/auth";
  * Two invariants shape everything here:
  *
  * - **Authoring is gated on a live registration** (`x-wealth-product.md` §5.4),
- *   so every action goes through `requirePublishingRights()`.
+ *   so every action goes through `requireUser()`.
  * - **`strategy_versions` is append-only** (§5.1). A revision inserts a new row
  *   pointing at its parent; nothing ever updates a version. The database
  *   enforces this with a trigger, so a mistake here fails loudly rather than
@@ -53,7 +53,7 @@ export async function createStrategy(input: {
   }
 
   try {
-    const { advisor } = await requirePublishingRights();
+    const { user } = await requireUser();
 
     const issues = validateStrategyDefinition(input.definition, await loadCatalogue());
     if (issues.length > 0) return { ok: false, error: issues[0].message };
@@ -62,7 +62,7 @@ export async function createStrategy(input: {
       const [strategy] = await tx
         .insert(strategies)
         .values({
-          advisorId: advisor.id,
+          userId: user.id,
           name,
           description: input.description.trim() || null,
           segment: "EQUITY",
@@ -91,7 +91,7 @@ export async function createStrategy(input: {
       return strategy.id;
     });
 
-    revalidatePath("/advisor/home");
+    revalidatePath("/home");
     return { ok: true, data: { strategyId } };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
@@ -114,7 +114,7 @@ export async function reviseStrategy(input: {
   if (hypothesis.length < 10) return { ok: false, error: "Write the hypothesis for this version." };
 
   try {
-    const { advisor } = await requirePublishingRights();
+    const { user } = await requireUser();
 
     const issues = validateStrategyDefinition(input.definition, await loadCatalogue());
     if (issues.length > 0) return { ok: false, error: issues[0].message };
@@ -123,7 +123,7 @@ export async function reviseStrategy(input: {
       const [strategy] = await tx
         .select()
         .from(strategies)
-        .where(and(eq(strategies.id, input.strategyId), eq(strategies.advisorId, advisor.id)))
+        .where(and(eq(strategies.id, input.strategyId), eq(strategies.userId, user.id)))
         .limit(1);
       if (!strategy) throw new NotAuthorisedError("No such strategy.");
 
@@ -159,8 +159,8 @@ export async function reviseStrategy(input: {
       return version;
     });
 
-    revalidatePath(`/advisor/strategies/${input.strategyId}`);
-    revalidatePath("/advisor/home");
+    revalidatePath(`/strategies/${input.strategyId}`);
+    revalidatePath("/home");
     return { ok: true, data: { versionId: result.id, versionNo: result.versionNo } };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
@@ -189,7 +189,7 @@ export async function listStrategies(): Promise<
   ActionResult<Array<{ id: string; name: string; description: string | null; versionCount: number; updatedAt: Date }>>
 > {
   try {
-    const { advisor } = await requirePublishingRights();
+    const { user } = await requireUser();
     const rows = await db()
       .select({
         id: strategies.id,
@@ -202,7 +202,7 @@ export async function listStrategies(): Promise<
         )`,
       })
       .from(strategies)
-      .where(eq(strategies.advisorId, advisor.id))
+      .where(eq(strategies.userId, user.id))
       .orderBy(strategies.updatedAt);
 
     return { ok: true, data: rows.reverse() };

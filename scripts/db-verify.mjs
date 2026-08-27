@@ -123,9 +123,9 @@ try {
     await sql.begin(async (tx) => {
       await tx.unsafe(`
         insert into auth.users(id) values ('${F}') on conflict do nothing;
-        insert into advisors(id, user_id, sebi_registration_no)
-          values ('${F}', '${F}', 'INH_SERVICE_ROLE_CHECK');
-        insert into strategies(id, advisor_id, name, segment, timeframe)
+        insert into users(id, auth_user_id, contact_name)
+          values ('${F}', '${F}', 'service-role check');
+        insert into strategies(id, user_id, name, segment, timeframe)
           values ('${F}', '${F}', 'check', 'EQUITY', '1d');
         insert into strategy_versions(id, strategy_id, version_no, definition)
           values ('${F}', '${F}', 1, '{}'::jsonb);

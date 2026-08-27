@@ -52,10 +52,10 @@ const check = (ok: boolean, label: string, detail = "") => {
   console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  ${detail}` : ""}`);
 };
 
-const { advisors } = await import("@/db/schema");
-const [owner] = await db().select({ id: advisors.id }).from(advisors).limit(1);
+const { users } = await import("@/db/schema");
+const [owner] = await db().select({ id: users.id }).from(users).limit(1);
 if (!owner) {
-  console.error("No advisor rows — cannot build a forward test to advance.");
+  console.error("No user rows — cannot build a forward test to advance.");
   process.exit(1);
 }
 const ownerId = owner.id;
@@ -66,7 +66,7 @@ try {
       const [strategy] = await tx
         .insert(strategies)
         .values({
-          advisorId: ownerId,
+          userId: ownerId,
           name: "forward-test verification",
           segment: "EQUITY",
           timeframe: "1d",

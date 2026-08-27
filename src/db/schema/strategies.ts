@@ -6,7 +6,7 @@ import {
   timestampTz,
   type StrategyDefinition,
 } from "./_shared";
-import { advisors } from "./advisors";
+import { users } from "./users";
 
 /**
  * A strategy is the mutable container. Its *content* lives in
@@ -17,9 +17,9 @@ export const strategies = pgTable(
   "strategies",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    advisorId: uuid("advisor_id")
+    userId: uuid("user_id")
       .notNull()
-      .references(() => advisors.id, { onDelete: "restrict" }),
+      .references(() => users.id, { onDelete: "restrict" }),
 
     name: text("name").notNull(),
     description: text("description"),
@@ -36,7 +36,7 @@ export const strategies = pgTable(
     createdAt: createdAt(),
     updatedAt: timestampTz("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("strategies_advisor_id_idx").on(t.advisorId)],
+  (t) => [index("strategies_user_id_idx").on(t.userId)],
 );
 
 /**

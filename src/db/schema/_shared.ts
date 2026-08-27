@@ -44,30 +44,6 @@ export const symbolCheck = (column: string) =>
 // Enums
 // ---------------------------------------------------------------------------
 
-export const verificationStatus = pgEnum("verification_status", [
-  "UNSUBMITTED",
-  "PENDING",
-  "VERIFIED",
-  "REJECTED",
-  /** Registration lapsed or withdrawn — publishing capability is suspended. */
-  "SUSPENDED",
-]);
-
-export const documentReviewStatus = pgEnum("document_review_status", [
-  "PENDING",
-  "ACCEPTED",
-  "REJECTED",
-]);
-
-export const advisorDocumentType = pgEnum("advisor_document_type", [
-  "SEBI_REGISTRATION_CERTIFICATE",
-  "RAASB_ENLISTMENT",
-  "PAN_CARD",
-  "FIRM_INCORPORATION",
-  "ADDRESS_PROOF",
-  "OTHER",
-]);
-
 /**
  * Forward-test lifecycle. Transitions are one-way and enforced in the database
  * — see the constraints migration. `strategy_version_id` freezes at RUNNING
@@ -107,17 +83,11 @@ export const priceAdjustment = pgEnum("price_adjustment", ["ADJUSTED", "UNADJUST
  */
 export const instrumentKind = pgEnum("instrument_kind", ["EQUITY", "INDEX"]);
 
-export const groupVisibility = pgEnum("group_visibility", ["PUBLIC", "PRIVATE"]);
-
-export const billingPeriod = pgEnum("billing_period", ["MONTHLY", "QUARTERLY", "ANNUAL"]);
-
-export const subscriptionStatus = pgEnum("subscription_status", [
-  "ACTIVE",
-  "PAST_DUE",
-  "CANCELLED",
-  "EXPIRED",
-]);
-
+/**
+ * Self-reported, and used to calibrate how much the product explains rather
+ * than what it permits. It gates nothing — `CLAUDE.md` §8.12 says statistical
+ * inadequacy is surfaced prominently to everyone, not only to beginners.
+ */
 export const experienceLevel = pgEnum("experience_level", [
   "BEGINNER",
   "INTERMEDIATE",
@@ -125,29 +95,7 @@ export const experienceLevel = pgEnum("experience_level", [
   "SUPER_PRO",
 ]);
 
-export const riskProfile = pgEnum("risk_profile", ["LOW", "MEDIUM", "HIGH"]);
-
 export const marketSegment = pgEnum("market_segment", ["EQUITY", "FNO", "COMMODITY", "CURRENCY"]);
-
-/**
- * A directional view, for `market_views`. A closed set on purpose — the whole
- * reason a stance is safe to post without a forward test behind it is that it
- * is not free text, and a free-text stance would make it one.
- */
-export const marketStance = pgEnum("market_stance", ["BULLISH", "BEARISH", "NEUTRAL"]);
-
-/**
- * A group invitation's life. One way: a PENDING invitation is either taken up
- * or withdrawn, and neither is undone. Enforced by a trigger in migration 0007
- * for the same reason the forward-test lifecycle is — an invitation that could
- * be un-revoked is a private group that can be re-entered after the advisor
- * closed the door.
- */
-export const invitationStatus = pgEnum("invitation_status", [
-  "PENDING",
-  "ACCEPTED",
-  "REVOKED",
-]);
 
 // ---------------------------------------------------------------------------
 // Structured JSONB payloads

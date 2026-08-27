@@ -7,7 +7,7 @@ import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { RadioCardGroup, type RadioCardOption } from "@/components/ui/RadioCardGroup";
-import { saveExperienceLevel } from "@/server/actions/investor";
+import { saveExperienceLevel } from "@/server/actions/profile";
 
 /** Ids are the database enum values, so nothing has to translate between them. */
 const GOALS: ReadonlyArray<RadioCardOption> = [

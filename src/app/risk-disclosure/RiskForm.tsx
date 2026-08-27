@@ -7,7 +7,7 @@ import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
-import { acknowledgeRisk } from "@/server/actions/investor";
+import { acknowledgeRisk } from "@/server/actions/profile";
 
 /**
  * The last gate before the app.

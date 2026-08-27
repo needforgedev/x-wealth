@@ -1,26 +1,35 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { advisors, investors, platformAdmins } from "@/db/schema";
-import { GATE_MESSAGES, registrationGate } from "@/domain/registration-gate";
+import { platformAdmins, users, type User } from "@/db/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { readDevSession } from "@/server/auth/dev-session";
 
 /**
  * Who is asking, and what are they allowed to do.
  *
- * This module is the single chokepoint for authorisation. `x-wealth-product.md`
- * §5.4 asks for a middleware-level registration gate rather than per-endpoint
- * checks; in Next 16 the proxy runs at a network boundary and is the wrong
- * place for a database read, so the gate lives here instead — one guard that
- * every protected action calls. Same intent, one place to audit.
+ * The single chokepoint for authorisation. Roles are rows in our own tables,
+ * never JWT claims, so nothing here needs a key that bypasses row-level
+ * security.
  *
- * Roles are rows in our own tables, never JWT claims. Nothing here needs a key
- * that bypasses row-level security.
+ * ## The registration gate is gone
+ *
+ * This module used to export `requirePublishingRights`, which refused every
+ * protected action unless the caller held a current SEBI Research Analyst
+ * registration. It guarded strategy publication, group creation, signal
+ * issuance and fee collection.
+ *
+ * None of those exist any more. `CLAUDE.md` §2 abandons the Research Analyst
+ * direction, and §8.5 makes a user's strategies private to them — so there is
+ * no publication to gate, and holding a registration would not change what
+ * anyone may do here. Removed rather than left permanently allowing, because a
+ * gate that always opens reads like protection and is not.
+ *
+ * What replaces it is narrower and honest: `requireUser` answers "is this a
+ * real account", and ownership is checked per row against `user_id`. A user may
+ * only ever see their own work — that is the whole authorisation model, and it
+ * is the one §8.5 requires.
  */
-
-export { GATE_MESSAGES, registrationGate } from "@/domain/registration-gate";
-export type { GateFailure, GateResult } from "@/domain/registration-gate";
 
 /**
  * The minimum we need about the signed-in person.
@@ -31,13 +40,12 @@ export type { GateFailure, GateResult } from "@/domain/registration-gate";
  */
 export type AuthUser = { id: string; phone: string | null };
 
-export type Advisor = typeof advisors.$inferSelect;
-export type Investor = typeof investors.$inferSelect;
+export type { User } from "@/db/schema";
 
 export type Identity = {
-  user: AuthUser;
-  advisor: Advisor | null;
-  investor: Investor | null;
+  auth: AuthUser;
+  /** Null until the account finishes its first onboarding step. */
+  user: User | null;
   isAdmin: boolean;
 };
 
@@ -67,22 +75,20 @@ export async function currentUser(): Promise<AuthUser | null> {
   return devUserId ? { id: devUserId, phone: null } : null;
 }
 
-/** The signed-in user plus whatever roles they hold in our own tables. */
+/** The signed-in account plus its profile row, if onboarding has created one. */
 export async function currentIdentity(): Promise<Identity | null> {
-  const user = await currentUser();
-  if (!user) return null;
+  const auth = await currentUser();
+  if (!auth) return null;
 
   const database = db();
-  const [advisorRow, investorRow, adminRow] = await Promise.all([
-    database.select().from(advisors).where(eq(advisors.userId, user.id)).limit(1),
-    database.select().from(investors).where(eq(investors.userId, user.id)).limit(1),
-    database.select().from(platformAdmins).where(eq(platformAdmins.userId, user.id)).limit(1),
+  const [userRow, adminRow] = await Promise.all([
+    database.select().from(users).where(eq(users.authUserId, auth.id)).limit(1),
+    database.select().from(platformAdmins).where(eq(platformAdmins.userId, auth.id)).limit(1),
   ]);
 
   return {
-    user,
-    advisor: advisorRow[0] ?? null,
-    investor: investorRow[0] ?? null,
+    auth,
+    user: userRow[0] ?? null,
     isAdmin: adminRow.length > 0,
   };
 }
@@ -93,34 +99,20 @@ export async function requireIdentity(): Promise<Identity> {
   return identity;
 }
 
-export async function requireAdvisor(): Promise<{ identity: Identity; advisor: Advisor }> {
+/**
+ * A signed-in account that has a profile row.
+ *
+ * Everything that owns data — strategies, backtests, forward tests, holdings —
+ * needs a `users.id` to hang it off, so this is the guard those actions call.
+ */
+export async function requireUser(): Promise<{ identity: Identity; user: User }> {
   const identity = await requireIdentity();
-  if (!identity.advisor) throw new NotAuthorisedError("This account is not an advisor");
-  return { identity, advisor: identity.advisor };
-}
-
-export async function requireInvestor(): Promise<Investor> {
-  const identity = await requireIdentity();
-  if (!identity.investor) throw new NotAuthorisedError("This account is not an investor");
-  return identity.investor;
+  if (!identity.user) throw new NotAuthorisedError("Finish setting up your account first");
+  return { identity, user: identity.user };
 }
 
 export async function requireAdmin(): Promise<Identity> {
   const identity = await requireIdentity();
   if (!identity.isAdmin) throw new NotAuthorisedError("Platform ops access required");
   return identity;
-}
-
-/**
- * Guard for every action the gate covers: strategy publication, group creation,
- * signal issuance, fee collection.
- */
-export async function requirePublishingRights(): Promise<{
-  identity: Identity;
-  advisor: Advisor;
-}> {
-  const { identity, advisor } = await requireAdvisor();
-  const gate = registrationGate(advisor);
-  if (!gate.allowed) throw new NotAuthorisedError(GATE_MESSAGES[gate.reason]);
-  return { identity, advisor };
 }

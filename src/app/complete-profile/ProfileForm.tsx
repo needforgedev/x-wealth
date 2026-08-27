@@ -1,7 +1,7 @@
 "use client";
 
 import { CompleteProfileScreenBody } from "@/components/screens/CompleteProfileScreenBody";
-import { saveInvestorProfile } from "@/server/actions/investor";
+import { saveProfile } from "@/server/actions/profile";
 
 export function ProfileForm({
   initial,
@@ -16,7 +16,7 @@ export function ProfileForm({
       nextHref={nextHref}
       initial={initial}
       onSubmit={async ({ firstName, lastName, email }) => {
-        const result = await saveInvestorProfile({
+        const result = await saveProfile({
           fullName: `${firstName} ${lastName}`.trim(),
           email,
         });
