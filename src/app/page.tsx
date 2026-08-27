@@ -8,32 +8,34 @@ import { AppShell } from "@/components/AppShell";
 import { CarouselDots } from "@/components/ui/CarouselDots";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
-import { RoleTabs, type Role } from "@/components/ui/RoleTabs";
 import { normalisePhone } from "@/domain/phone";
 import { sendOtp } from "@/server/actions/auth";
 
-const COPY: Record<Role, { heading: string; subheading: string }> = {
-  investor: {
-    heading: "Get started as an investor",
-    subheading: "Get quality trading signals by certified experts and professionals",
-  },
-  advisor: {
-    heading: "Earn money for your signals",
-    subheading: "Get quality trading signals by certified experts and professionals",
-  },
-};
+/**
+ * One persona, one panel.
+ *
+ * This screen used to offer Investor and Advisor tabs, pitch "quality trading
+ * signals by certified experts", and tick "Verified Experts" / "Quality
+ * Signals". Every part of that is prohibited now: `CLAUDE.md` §2 abandons the
+ * advisor direction, §8.5 keeps a user's strategies private to them, and §8.7
+ * forbids the platform characterising anyone's performance — "verified" and
+ * "quality" are exactly the words it names.
+ *
+ * The features below describe what the tool does mechanically. They make no
+ * claim about outcomes, because we do not have one to make.
+ */
+const HEADING = "Test your trading idea before it costs you";
+const SUBHEADING =
+  "Describe a rule in plain English, run it against five years of history net of Indian costs, then forward-test it on paper before it sees real money.";
 
-const FEATURES = ["Verified Experts", "Quality Signals"] as const;
+const FEATURES = ["Net of every cost", "Locked forward tests"] as const;
 
 export default function GetStartedPage() {
   const router = useRouter();
-  const [role, setRole] = useState<Role>("investor");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const { heading, subheading } = COPY[role];
 
-  /** Both roles are live. Which profile gets created depends on the tab. */
   const start = () => {
     setError(null);
 
@@ -50,8 +52,7 @@ export default function GetStartedPage() {
         return;
       }
       const hint = result.data.hint ? `&hint=${encodeURIComponent(result.data.hint)}` : "";
-      const base = role === "advisor" ? "/advisor/otp" : "/otp";
-      router.push(`${base}?phone=${encodeURIComponent(e164)}${hint}`);
+      router.push(`/otp?phone=${encodeURIComponent(e164)}${hint}`);
     });
   };
 
@@ -86,16 +87,9 @@ export default function GetStartedPage() {
       </header>
 
       <section className="bg-surface shadow-card">
-        <RoleTabs value={role} onChange={setRole} />
-
-        <div
-          id={`panel-${role}`}
-          role="tabpanel"
-          aria-labelledby={`tab-${role}`}
-          className="px-5 pt-10 pb-[calc(28px+env(safe-area-inset-bottom))]"
-        >
-          <h1 className="text-[18px] font-semibold capitalize text-ink">{heading}</h1>
-          <p className="mt-2 max-w-[305px] text-[16px] text-muted">{subheading}</p>
+        <div className="px-5 pt-10 pb-[calc(28px+env(safe-area-inset-bottom))]">
+          <h1 className="text-[18px] font-semibold text-ink">{HEADING}</h1>
+          <p className="mt-2 max-w-[305px] text-[16px] text-muted">{SUBHEADING}</p>
 
           <ul className="mt-6 grid grid-cols-2 gap-x-2 gap-y-3">
             {FEATURES.map((feature) => (
