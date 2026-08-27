@@ -487,7 +487,7 @@ component itself is going.
 - [-] **W10-05** ~~Fix the "Acuracy" typo~~ — moot
 - [-] **W10-08** ~~Strategy discovery~~ — **prohibited.** Cross-user strategy visibility is §8.5
 - [-] **W10-11** ~~Send Signal → Preview artboard~~ — signals are gone
-- [ ] **W10-06** **Teardown migration.** Drop the distribution schema — groups, `group_strategies`, `group_invitations`, subscriptions, pricing tiers, signals, `market_views` — **unwinding each table's append-only trigger and grant in the same transaction**, or `db:verify` reports orphans forever
+- [x] **W10-06** **Done 27 Aug 2026.** Teardown migration `0009`. Drop the distribution schema — groups, `group_strategies`, `group_invitations`, subscriptions, pricing tiers, signals, `market_views` — **unwinding each table's append-only trigger and grant in the same transaction**, or `db:verify` reports orphans forever
 - [ ] **W10-07** Resolve any remaining v1 doc contradictions — largely moot now that `CLAUDE.md` is the single source
 - [ ] **W10-09** Ban list as a lint rule: no "verified", "top-rated", "high-performing", "best" copy anywhere (§8.7). **Still needed — this one survives the pivot intact**
 - [-] **W10-10** ~~Replace the `/alpha` placeholder assets~~ — moot, `/alpha` is gone (AD-18)
@@ -614,14 +614,14 @@ component itself is going.
 
 ### W24 — Single-persona identity *(new — the pivot's structural work)*
 
-- [ ] **W24-01** `users` table per §9: `id`, `email`, `phone`, `created_at`, `plan_tier`, `risk_ack_at`. Replaces `advisors` and `investors`
-- [ ] **W24-02** `strategies.user_id` replaces `strategies.advisor_id`; same for every downstream FK
-- [ ] **W24-03** Collapse both onboarding flows into one. Resolves the dead `AD-15`
-- [ ] **W24-04** Carry the risk acknowledgement across — three points acknowledged separately, not one blanket agreement (the one genuinely good piece of W11)
-- [ ] **W24-05** Decide what `/ops` and `platform_admins` become with no KYC queue to review
-- [ ] **W24-06** Repurpose or delete `requirePublishingRights` (W1-09) — nothing is published in v2
-- [ ] **W24-07** Re-home the surviving routes: `/advisor/{home,strategies,backtests,forward-tests}` → top level
-- [ ] **W24-08** **Verify the append-only triggers still hold after the FK rewrite.** Re-run `verify_invariants.sql` and `verify-freeze` against the migrated schema. The freeze is the product; a migration is exactly the kind of change that quietly breaks it
+- [x] **W24-01** **Done 27 Aug 2026.** `users` table per §9: `id`, `email`, `phone`, `created_at`, `plan_tier`, `risk_ack_at`. Replaces `advisors` and `investors`
+- [x] **W24-02** **Done 27 Aug 2026.** `strategies.user_id` replaces `strategies.advisor_id`; same for every downstream FK
+- [x] **W24-03** **Done 27 Aug 2026.** One flow: phone → profile → experience → risk → home. `/choose-interests` deleted with the `interests` column — it fed a discovery feed of other people's strategies. Resolves the dead `AD-15`
+- [x] **W24-04** **Done 27 Aug 2026.** Risk acknowledgement carried across — three points acknowledged separately, not one blanket agreement (the one genuinely good piece of W11)
+- [x] **W24-05** **Decided 27 Aug 2026.** `/ops` deleted — the KYC review queue had nothing left to review. `platform_admins` and `requireAdmin` kept: they cost nothing and W1-16 needs them when real admin tooling arrives. with no KYC queue to review
+- [x] **W24-06** **Done 27 Aug 2026.** Deleted, not left permanently allowing — a gate that always opens reads like protection and is not. `requireUser` plus per-row ownership on `user_id` replaces it (W1-09) — nothing is published in v2
+- [x] **W24-07** **Done 27 Aug 2026.** Re-homed the surviving routes: `/advisor/{home,strategies,backtests,forward-tests}` → top level
+- [x] **W24-08** **Verified 27 Aug 2026.** Triggers and the parameter freeze both hold after the FK rewrite, including under `service_role`; `verify-forward-test` advanced a 120-session window, reconciled ledger against engine to four decimals (0.4231% both sides) and was refused when writing a result twice. **The migration was exactly the kind of change that quietly breaks the freeze, and it did not.** Re-run `verify_invariants.sql` and `verify-freeze` against the migrated schema. The freeze is the product; a migration is exactly the kind of change that quietly breaks it
 
 ### W25 — Subscription & billing *(new)* — blocked on B-9
 
@@ -751,6 +751,7 @@ before more work lands on a schema with the wrong shape.
 
 | Date | Change |
 |---|---|
+| **27 Aug 2026** | **Identity collapsed (W24) and the distribution schema dropped (W10-06).** Migrations `0009` and `0010` applied to the live database: 22 tables → 12. `advisors` + `investors` → one `users` table, `strategies` and `portfolio_entries` repointed, KYC and PaRRVA fields gone, `interests` gone with the discovery feed it fed. `requirePublishingRights` deleted rather than left permanently allowing. Routes re-homed to top level; `/advisor/*`, `/investor`, `/ops`, `/choose-interests` removed. **W24-08 verified** — the freeze and the append-only triggers survived the FK rewrite, under `service_role`, and the engine still reconciles to four decimals. Data intact: 2 users, 4 strategies with owners, 5 versions, 5 backtest runs. Also fixed `db-migrate.mjs`, which reported "✓ migrations applied" having applied nothing because `migrate()` reads the journal rather than the folder — it now refuses to start when a numbered migration on disk has no journal entry. 276 tests green. |
 | **27 Aug 2026** | **Distribution surface removed (W10-01, W10-02, W10-03, W10-15, W10-16, W10-17, W10-19; AD-18 closed).** 104 files, ~9,200 deletions on branch `v2-teardown`, tagged `v1-marketplace-final` first. Gone: groups, invitations, subscriptions and payments, signal composition and feeds, discovery, chat, the `/alpha` second pass, persona switching, the `/screens` Figma index, and the fixture modules carrying the hardcoded `aum`/`accuracy`/`rating` figures and the real-format SEBI number. Kept deliberately: `/portfolio` and `/profile` have no cross-user surface — superseding them is a W24/W19 scope question, not a legal one — and the onboarding flows are persona-specific rather than prohibited. **The schema is untouched on purpose**: dropping the distribution tables must unwind each one's append-only trigger and revoked grant in the same transaction (W10-06). 301 tests green, typecheck, lint and build clean. |
 | **26 Aug 2026** | **Evening scheduler live (AD-09, W6-04, W6-16, W3-11).** `.github/workflows/forward-tests.yml` runs load → advance → health check on weekdays at 16:45 IST, serialised so two runs cannot write to append-only tables at once. New `scripts/check-forward-test-health.mts` is the alarm the other two jobs cannot raise: they exit non-zero when they crash, but a stale vendor feed makes a stalled test look exactly like a quiet market. It found real staleness on its first run — bars six days old — and went green after a load. **The 60-session clock can now start (W6-15).** |
 | **26 Aug 2026** | **Rewritten for the v2 direction.** `CLAUDE.md` replaces `x-wealth-product.md` as the source of truth: single-persona AI strategy lab, no advisors, no investors, no distribution. **Dropped:** W2 (SEBI KYC), W9 (PaRRVA), W11 (investor), W12 (groups/signals), W13 (payments/attribution), blockers B-3/B-4/B-8, milestones M0–M8, decisions AD-14/15/16. **Added:** W15 hypothesis workbench, W16 event awareness, W17 annotations, W18 adversarial suite, W19 portfolio risk, W20 trigger proximity, W21 execution gap, W22 review cadence, W23 broker integration, W24 identity collapse, W25 billing; milestones N0–N8; blockers B-9/B-10/**B-11**; decisions AD-17…AD-22. **Restated:** B-1, B-2, B-5. Current state re-audited — 327 tests across 18 files, 9 migrations, backtest + forward-test engines live against real Upstox bars, AI at zero. |
