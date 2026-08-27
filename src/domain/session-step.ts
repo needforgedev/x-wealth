@@ -3,7 +3,7 @@ import { accountForTrade, chargesForLeg, type CostModel, type TradeAccounting } 
 import type { Bar } from "./market-data";
 import { positionValue, type PriceTicks } from "./money";
 import type { IsoDate } from "./session";
-import type { StrategyDefinition } from "./strategy";
+import type { ResolvedDefinition } from "./strategy";
 
 /**
  * One session, for one instrument.
@@ -67,7 +67,7 @@ export type SessionInput = {
   entrySignal: boolean | null;
   exitSignal: boolean | null;
 
-  definition: StrategyDefinition;
+  definition: ResolvedDefinition;
   costModel: CostModel;
   lotSize: number;
 
@@ -171,19 +171,14 @@ export function advanceSession(input: SessionInput): SessionOutcome {
 
 function openAt(
   bar: Bar,
-  definition: StrategyDefinition,
+  definition: ResolvedDefinition,
   model: CostModel,
   cashPaise: number,
   lotSize: number,
 ): OpenedPosition | null {
   const price = bar.open;
 
-  // Percent of **cash on hand**, not of mark-to-market equity. The definition
-  // says "percent of available capital", and available is the honest reading: a
-  // position cannot be funded from the unrealised value of another one. It also
-  // makes a run hand-checkable, which gate G4 requires. The choice is recorded
-  // in the run's methodology so a reader is never left guessing.
-  const target = Math.floor((cashPaise * definition.positionSizePercent) / 100);
+  const target = targetNotional(definition, price, cashPaise);
   const qty = affordableQty(model, price, target, cashPaise, lotSize);
   if (qty <= 0) return null;
 
@@ -193,6 +188,56 @@ function openAt(
     stopPrice: stopPriceFor(price, definition.stopLossPercent),
     outlayPaise: positionValue(price, qty) + chargesForLeg(model, { side: "BUY", price, qty }).totalPaise,
   };
+}
+
+/**
+ * The rupee notional this position is aiming for.
+ *
+ * **CAPITAL_PERCENT** is a percentage of *cash on hand*, not of mark-to-market
+ * equity: a position cannot be funded from the unrealised value of another one.
+ * It also keeps a run hand-checkable, which the reconciliation suite requires.
+ *
+ * **RISK_PERCENT** is the sizing `CLAUDE.md` §7.3 specifies — the quantity
+ * falls out of the stop rather than being chosen beside it:
+ *
+ *   risk per unit = entry × stopLoss%          (the distance to the stop)
+ *   units         = (capital × risk%) ÷ risk per unit
+ *   notional      = units × entry
+ *
+ * which simplifies to `capital × risk% ÷ stopLoss%`. A tighter stop therefore
+ * buys more units for the same rupee risk, and a wider one fewer — the
+ * relationship the primer calls the whole point of position sizing.
+ *
+ * Capital here is cash on hand for the same reason as above. `affordableQty`
+ * still clamps the result, so a risk figure that implies more than the account
+ * holds becomes the largest position it can actually fund rather than a fill
+ * that never happened.
+ */
+function targetNotional(
+  definition: ResolvedDefinition,
+  price: PriceTicks,
+  cashPaise: number,
+): number {
+  if (definition.sizing.kind === "CAPITAL_PERCENT") {
+    return Math.floor((cashPaise * definition.sizing.percent) / 100);
+  }
+
+  const riskPaise = (cashPaise * definition.sizing.riskPercent) / 100;
+
+  /**
+   * Both sides of this division must be paise.
+   *
+   * `price` is in ticks — rupees × 10,000 — while cash is in paise, rupees ×
+   * 100. Dividing one by the other directly is off by a factor of a hundred,
+   * silently, in the direction of a position a hundred times too large.
+   * `positionValue` is the single sanctioned crossing point between the two
+   * types, so the risk per unit is computed through it rather than by hand.
+   */
+  const riskPerUnitPaise = (positionValue(price, 1) * definition.stopLossPercent) / 100;
+  if (riskPerUnitPaise <= 0) return 0;
+
+  const units = Math.floor(riskPaise / riskPerUnitPaise);
+  return positionValue(price, units);
 }
 
 /**

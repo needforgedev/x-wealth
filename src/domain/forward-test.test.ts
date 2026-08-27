@@ -13,7 +13,7 @@ import {
 import { ZERO_BROKERAGE, nseEquityDelivery, type CostModel } from "./costs";
 import { ohlcBars, type OhlcRow } from "./market-data-fixture";
 import { positionValue, priceFromString } from "./money";
-import { starterDefinition, type StrategyDefinition } from "./strategy";
+import { starterDefinition, type StrategyDefinitionV2 } from "./strategy";
 
 const FREE: CostModel = {
   segment: "TEST_FREE",
@@ -26,13 +26,13 @@ const FREE: CostModel = {
   slippagePercent: 0,
 };
 
-const RULES: StrategyDefinition = {
+const RULES: StrategyDefinitionV2 = {
   ...starterDefinition(),
-  instruments: ["NSE:TEST"],
+  universe: { instruments: ["NSE:TEST"], minAvgTurnoverPaise: null },
   entry: { left: { kind: "PRICE" }, comparator: "BELOW", right: { kind: "CONSTANT", value: 95 } },
   exit: { left: { kind: "PRICE" }, comparator: "ABOVE", right: { kind: "CONSTANT", value: 110 } },
   stopLossPercent: 10,
-  positionSizePercent: 100,
+  sizing: { kind: "CAPITAL_PERCENT" as const, percent: 100 },
   initialCapitalPaise: 10_000_000,
 };
 

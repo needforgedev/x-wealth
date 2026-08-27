@@ -75,6 +75,13 @@ for (const row of running) {
       }),
     );
 
+    if (result.status === "PENDING") {
+      // Normal on the day a test is created: the window opens on the next
+      // session. Not counted as halted — nothing is wrong.
+      console.log(`  ${label}: window opens on the first session after ${result.startedOn}`);
+      continue;
+    }
+
     if (result.status === "HALTED") {
       halted++;
       console.log(`  ${label}: HALTED — ${result.reason} (${result.unexplained})`);

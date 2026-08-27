@@ -15,7 +15,9 @@ import {
 import { BacktestError } from "@/domain/backtest";
 import { formatPaise, formatPrice } from "@/domain/money";
 import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
-import { describeCondition, type StrategyDefinition } from "@/domain/strategy";
+import { describeCondition,
+  describeSizing,
+  resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { currentIdentity } from "@/server/identity";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
 import { replayForwardTest } from "@/server/forward-test/replay";
@@ -68,6 +70,7 @@ export default async function ForwardTestConsolePage({
 
   const { test } = row;
   const definition = row.definition as StrategyDefinition;
+  const rules = resolveDefinition(definition);
   const costModel = test.costModel as CostModel;
 
   const recorded = (await tradesForForwardTest(test.id)).map(
@@ -161,11 +164,11 @@ export default async function ForwardTestConsolePage({
           Frozen parameters
         </h2>
         <dl className="mt-3 flex flex-col gap-2 text-[13px]">
-          <Row label="Entry" value={describeCondition(definition.entry)} />
-          <Row label="Exit" value={describeCondition(definition.exit)} />
-          <Row label="Stop-loss" value={`${definition.stopLossPercent}% below entry`} />
-          <Row label="Position size" value={`${definition.positionSizePercent}% of cash on hand`} />
-          <Row label="Instruments" value={definition.instruments.join(", ")} />
+          <Row label="Entry" value={describeCondition(rules.entry)} />
+          <Row label="Exit" value={describeCondition(rules.exit)} />
+          <Row label="Stop-loss" value={`${rules.stopLossPercent}% below entry`} />
+          <Row label="Position size" value={describeSizing(rules.sizing)} />
+          <Row label="Instruments" value={rules.instruments.join(", ")} />
           <Row
             label="Capital"
             value={formatPaise(test.initialCapitalPaise as never, { withPaise: false })}

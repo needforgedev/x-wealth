@@ -6,7 +6,7 @@ import {
   type Condition,
   type Operand,
   type OperandSpace,
-  type StrategyDefinition,
+  type ResolvedDefinition,
 } from "./strategy";
 
 /**
@@ -124,7 +124,7 @@ export type SignalSeries = {
   exit: Array<boolean | null>;
 };
 
-export function signalsFor(definition: StrategyDefinition, bars: readonly Bar[]): SignalSeries {
+export function signalsFor(definition: ResolvedDefinition, bars: readonly Bar[]): SignalSeries {
   const closes = bars.map((bar) => bar.close as number);
   const cache = new Map<string, Array<number | null>>();
 

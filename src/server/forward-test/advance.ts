@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "@/db";
 import { forwardTests, paperTrades } from "@/db/schema";
 import type { CostModel } from "@/domain/costs";
-import { diffAgainstLedger } from "@/domain/forward-test";
+import { diffAgainstLedger, ForwardTestError } from "@/domain/forward-test";
 import type { MarketDataSource } from "@/domain/market-data";
 import { priceTicks, priceToString } from "@/domain/money";
 import type { StrategyDefinition } from "@/domain/strategy";
@@ -33,6 +33,8 @@ export type RunningTest = {
 
 export type AdvanceResult =
   | { status: "HALTED"; reason: string; unexplained: number }
+  /** Started, but no session has printed inside the window yet. */
+  | { status: "PENDING"; startedOn: string }
   | {
       status: "ADVANCED";
       sessionsElapsed: number;
@@ -67,14 +69,26 @@ export async function advanceForwardTest(input: {
 
   // The same call the console makes, so what gets written and what gets shown
   // cannot disagree. See `replay.ts`.
-  const progress = await replayForwardTest({
-    startedOn,
-    plannedSessions: test.plannedSessions,
-    initialCapitalPaise: test.initialCapitalPaise,
-    costModel: test.costModel as CostModel,
-    definition,
-    source,
-  });
+  let progress;
+  try {
+    progress = await replayForwardTest({
+      startedOn,
+      plannedSessions: test.plannedSessions,
+      initialCapitalPaise: test.initialCapitalPaise,
+      costModel: test.costModel as CostModel,
+      definition,
+      source,
+    });
+  } catch (error) {
+    // Every forward test is in this state on the day it is created: the window
+    // opens on the next session, and that session has not printed yet. Treating
+    // it as a halt would fail the evening job nightly until the market next
+    // opens, which is how a real alarm gets ignored.
+    if (error instanceof ForwardTestError && error.code === "WINDOW_NOT_OPEN") {
+      return { status: "PENDING", startedOn };
+    }
+    throw error;
+  }
 
   const ledger = input.recorded.map((t) => ({
     symbol: t.symbol,

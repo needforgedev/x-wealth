@@ -7,7 +7,9 @@ import { AppShell } from "@/components/AppShell";
 import { db } from "@/db";
 import { strategies, strategyVersions } from "@/db/schema";
 import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
-import { describeCondition, type StrategyDefinition } from "@/domain/strategy";
+import { describeCondition,
+  describeSizing,
+  resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { listRunsForStrategy } from "@/server/queries/backtest";
 import { listForwardTestsForStrategy } from "@/server/queries/forward-test";
@@ -85,6 +87,7 @@ export default async function StrategyPage({ params }: PageProps<"/strategies/[i
         <ol className="mt-3 flex flex-col gap-3">
           {versions.map((version) => {
             const definition = version.definition as StrategyDefinition;
+            const rules = resolveDefinition(definition);
             const isHead = version.id === strategy.currentVersionId;
             return (
               <li
@@ -108,11 +111,11 @@ export default async function StrategyPage({ params }: PageProps<"/strategies/[i
                 )}
 
                 <dl className="mt-3 flex flex-col gap-1 text-[13px]">
-                  <Row label="Entry" value={describeCondition(definition.entry)} />
-                  <Row label="Exit" value={describeCondition(definition.exit)} />
-                  <Row label="Stop-loss" value={`${definition.stopLossPercent}%`} />
-                  <Row label="Position size" value={`${definition.positionSizePercent}%`} />
-                  <Row label="Instruments" value={definition.instruments.join(", ")} />
+                  <Row label="Entry" value={describeCondition(rules.entry)} />
+                  <Row label="Exit" value={describeCondition(rules.exit)} />
+                  <Row label="Stop-loss" value={`${rules.stopLossPercent}%`} />
+                  <Row label="Position size" value={describeSizing(rules.sizing)} />
+                  <Row label="Instruments" value={rules.instruments.join(", ")} />
                 </dl>
 
                 {/* Every run for this version, newest first. There is no filter

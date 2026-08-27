@@ -4,7 +4,7 @@ import { runBacktest, sharpeOf, BacktestError, type BacktestInput } from "./back
 import { ZERO_BROKERAGE, nseEquityDelivery, type CostModel } from "./costs";
 import { ohlcBars, type OhlcRow } from "./market-data-fixture";
 import { priceFromString } from "./money";
-import { starterDefinition, type StrategyDefinition } from "./strategy";
+import { starterDefinition, type StrategyDefinitionV2 } from "./strategy";
 
 /**
  * Behaviour of the engine, and the adversarial suite that tries to make it peek.
@@ -31,17 +31,17 @@ const FREE: CostModel = {
  * Price above/below a constant, so entries and exits are driven purely by the
  * close and there is no indicator warm-up in the way.
  */
-const priceRules = (buyBelow: number, sellAbove: number): StrategyDefinition => ({
+const priceRules = (buyBelow: number, sellAbove: number): StrategyDefinitionV2 => ({
   ...starterDefinition(),
-  instruments: ["NSE:TEST"],
+  universe: { instruments: ["NSE:TEST"], minAvgTurnoverPaise: null },
   entry: { left: { kind: "PRICE" }, comparator: "BELOW", right: { kind: "CONSTANT", value: buyBelow } },
   exit: { left: { kind: "PRICE" }, comparator: "ABOVE", right: { kind: "CONSTANT", value: sellAbove } },
   stopLossPercent: 10,
-  positionSizePercent: 100,
+  sizing: { kind: "CAPITAL_PERCENT" as const, percent: 100 },
   initialCapitalPaise: 10_000_000, // ₹1,00,000
 });
 
-const run = (definition: StrategyDefinition, rows: OhlcRow[], overrides: Partial<BacktestInput> = {}) =>
+const run = (definition: StrategyDefinitionV2, rows: OhlcRow[], overrides: Partial<BacktestInput> = {}) =>
   runBacktest({
     definition,
     series: { "NSE:TEST": ohlcBars({ from: "2026-01-05", rows }) },
@@ -301,7 +301,10 @@ describe("indicator warm-up", () => {
 
     expect(() =>
       runBacktest({
-        definition: { ...starterDefinition(), instruments: ["NSE:TEST"] },
+        definition: {
+          ...starterDefinition(),
+          universe: { instruments: ["NSE:TEST"], minAvgTurnoverPaise: null },
+        },
         series: { "NSE:TEST": ohlcBars({ from: "2026-01-05", rows }) },
         costModel: FREE,
       }),
@@ -353,7 +356,10 @@ describe("indicator warm-up", () => {
     }));
 
     const outcome = runBacktest({
-      definition: { ...starterDefinition(), instruments: ["NSE:TEST"] },
+      definition: {
+          ...starterDefinition(),
+          universe: { instruments: ["NSE:TEST"], minAvgTurnoverPaise: null },
+        },
       series: { "NSE:TEST": ohlcBars({ from: "2026-01-05", rows }) },
       costModel: FREE,
     });

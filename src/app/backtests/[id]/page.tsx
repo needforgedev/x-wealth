@@ -9,7 +9,9 @@ import type { CostModel } from "@/domain/costs";
 import type { RunMethodology } from "@/domain/methodology";
 import { formatPaise, formatPrice, priceTicks } from "@/domain/money";
 import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
-import { describeCondition, type StrategyDefinition } from "@/domain/strategy";
+import { describeCondition,
+  describeSizing,
+  resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { currentIdentity } from "@/server/identity";
 import { loadRunForUser } from "@/server/queries/backtest";
 
@@ -37,6 +39,8 @@ export default async function BacktestRunPage({ params }: PageProps<"/backtests/
   if (!row) notFound();
 
   const definition = row.definition as StrategyDefinition;
+
+  const rules = resolveDefinition(definition);
   const methodology = row.run.methodology as RunMethodology;
   const costModel = row.run.costModel as CostModel;
   const results = row.run.results as unknown as {
@@ -235,9 +239,9 @@ export default async function BacktestRunPage({ params }: PageProps<"/backtests/
         </p>
 
         <p className="mt-4 text-[12px] text-muted">
-          Rules tested — entry: {describeCondition(definition.entry)}; exit:{" "}
-          {describeCondition(definition.exit)}; stop {definition.stopLossPercent}%; size{" "}
-          {definition.positionSizePercent}% per position.
+          Rules tested — entry: {describeCondition(rules.entry)}; exit:{" "}
+          {describeCondition(rules.exit)}; stop {rules.stopLossPercent}%; size{" "}
+          {describeSizing(rules.sizing)}.
         </p>
       </div>
     </AppShell>

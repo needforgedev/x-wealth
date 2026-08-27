@@ -14,7 +14,7 @@ import {
   type Condition,
   type InstrumentChoice,
   type Operand,
-  type StrategyDefinition,
+  type StrategyDefinitionV2,
 } from "@/domain/strategy";
 
 /**
@@ -168,7 +168,7 @@ export type StrategyFormValues = {
   name: string;
   description: string;
   hypothesis: string;
-  definition: StrategyDefinition;
+  definition: StrategyDefinitionV2;
 };
 
 export function StrategyForm({
@@ -198,15 +198,18 @@ export function StrategyForm({
   const [pending, setPending] = useState(false);
 
   const def = values.definition;
-  const setDef = (patch: Partial<StrategyDefinition>) =>
+  const setDef = (patch: Partial<StrategyDefinitionV2>) =>
     setValues((v) => ({ ...v, definition: { ...v.definition, ...patch } }));
 
   const toggleSymbol = (symbol: string) => {
     setError(null);
     setDef({
-      instruments: def.instruments.includes(symbol)
-        ? def.instruments.filter((s) => s !== symbol)
-        : [...def.instruments, symbol],
+      universe: {
+        ...def.universe,
+        instruments: def.universe.instruments.includes(symbol)
+          ? def.universe.instruments.filter((sym: string) => sym !== symbol)
+          : [...def.universe.instruments, symbol],
+      },
     });
   };
 
@@ -277,7 +280,7 @@ export function StrategyForm({
         ) : (
           <ul className="flex flex-col gap-2">
             {catalogue.map((choice) => {
-              const selected = def.instruments.includes(choice.symbol);
+              const selected = def.universe.instruments.includes(choice.symbol);
               const tooShort = warmUp > 0 && choice.barCount <= warmUp;
               // An index has a price and nothing to buy; too little history
               // means the rules can never produce a first signal. Both are
@@ -343,14 +346,48 @@ export function StrategyForm({
             className={input}
           />
         </Field>
-        <Field label="Position size %" hint="Of capital, per position.">
-          <input
-            type="number"
-            step={5}
-            value={def.positionSizePercent}
-            onChange={(e) => setDef({ positionSizePercent: Number(e.target.value) || 0 })}
-            className={input}
-          />
+        <Field
+          label={def.sizing.kind === "RISK_PERCENT" ? "Risk per trade %" : "Position size %"}
+          hint={
+            def.sizing.kind === "RISK_PERCENT"
+              ? "Of capital, risked. Quantity comes from the stop."
+              : "Of cash, committed. The stop plays no part."
+          }
+        >
+          <div className="flex gap-2">
+            <select
+              value={def.sizing.kind}
+              onChange={(e) =>
+                setDef({
+                  sizing:
+                    e.target.value === "RISK_PERCENT"
+                      ? { kind: "RISK_PERCENT", riskPercent: 1 }
+                      : { kind: "CAPITAL_PERCENT", percent: 25 },
+                })
+              }
+              className={`${input} w-[7.5rem] shrink-0`}
+            >
+              <option value="RISK_PERCENT">Risk</option>
+              <option value="CAPITAL_PERCENT">Capital</option>
+            </select>
+            <input
+              type="number"
+              step={def.sizing.kind === "RISK_PERCENT" ? 0.25 : 5}
+              value={
+                def.sizing.kind === "RISK_PERCENT" ? def.sizing.riskPercent : def.sizing.percent
+              }
+              onChange={(e) => {
+                const n = Number(e.target.value) || 0;
+                setDef({
+                  sizing:
+                    def.sizing.kind === "RISK_PERCENT"
+                      ? { kind: "RISK_PERCENT", riskPercent: n }
+                      : { kind: "CAPITAL_PERCENT", percent: n },
+                });
+              }}
+              className={input}
+            />
+          </div>
         </Field>
         <Field label="Starting capital (₹)">
           <input

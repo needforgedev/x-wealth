@@ -42,7 +42,16 @@ import type { StrategyDefinition } from "./strategy";
  *     whole claim, and it can only be trusted if nothing differs but the dates.
  */
 
-export class ForwardTestError extends Error {}
+export type ForwardTestErrorCode = "WINDOW_NOT_OPEN" | "MISMATCHED_CAPITAL" | "OTHER";
+
+export class ForwardTestError extends Error {
+  readonly code: ForwardTestErrorCode;
+
+  constructor(message: string, code: ForwardTestErrorCode = "OTHER") {
+    super(message);
+    this.code = code;
+  }
+}
 
 /**
  * Placeholder from §9 blocker B-2, which wants statistical justification.
@@ -319,12 +328,26 @@ export function evaluateForwardTest(input: {
     throw new ForwardTestError(
       `frozen capital ${params.initialCapitalPaise} does not match the strategy version's ` +
         `${params.definition.initialCapitalPaise}`,
+      "MISMATCHED_CAPITAL",
     );
   }
 
   const sessions = sessionsInWindow(input.series, params.startedOn);
   if (sessions.length === 0) {
-    throw new ForwardTestError(`no sessions have been recorded since ${params.startedOn}`);
+    /**
+     * Not a fault. A window opens on the *next* session, so between starting a
+     * test and that session printing there is legitimately nothing to replay —
+     * which is the state every forward test is in on the day it is created.
+     *
+     * The caller distinguishes it by code rather than by message. If bars have
+     * genuinely stopped arriving, the staleness check in
+     * `check-forward-test-health` is what says so; raising it here as well
+     * would fail the evening job nightly for a condition that is normal.
+     */
+    throw new ForwardTestError(
+      `no sessions have been recorded since ${params.startedOn}`,
+      "WINDOW_NOT_OPEN",
+    );
   }
 
   const sessionsElapsed = Math.min(sessions.length, params.plannedSessions);

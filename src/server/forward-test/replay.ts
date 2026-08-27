@@ -2,7 +2,7 @@ import { evaluateForwardTest, type ForwardTestProgress } from "@/domain/forward-
 import type { CostModel } from "@/domain/costs";
 import type { Bar, MarketDataSource } from "@/domain/market-data";
 import type { IsoDate } from "@/domain/session";
-import type { StrategyDefinition } from "@/domain/strategy";
+import { resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { toSymbol } from "@/domain/symbol";
 
 /**
@@ -28,7 +28,7 @@ export async function loadSeries(
   source: MarketDataSource,
 ): Promise<Record<string, readonly Bar[]>> {
   const series: Record<string, readonly Bar[]> = {};
-  for (const instrument of definition.instruments) {
+  for (const instrument of resolveDefinition(definition).instruments) {
     series[instrument] = await source.dailyBars(
       toSymbol(instrument),
       ALL_HISTORY.from,

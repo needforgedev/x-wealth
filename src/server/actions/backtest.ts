@@ -9,7 +9,11 @@ import { runBacktest, type BacktestOutcome } from "@/domain/backtest";
 import { ZERO_BROKERAGE, nseEquityDelivery } from "@/domain/costs";
 import type { Bar } from "@/domain/market-data";
 import { buildMethodology } from "@/domain/methodology";
-import { validateStrategyDefinition, type StrategyDefinition } from "@/domain/strategy";
+import {
+  resolveDefinition,
+  validateStrategyDefinition,
+  type StrategyDefinition,
+} from "@/domain/strategy";
 import { toSymbol } from "@/domain/symbol";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
@@ -75,7 +79,7 @@ export async function runBacktestForVersion(input: {
     // *reported*; the engine needs more than that in front of it so the
     // indicators can warm up, and it reports where the tradeable period began.
     const series: Record<string, readonly Bar[]> = {};
-    for (const symbol of definition.instruments) {
+    for (const symbol of resolveDefinition(definition).instruments) {
       series[symbol] = await source.dailyBars(toSymbol(symbol), "1900-01-01", "2999-12-31");
     }
 

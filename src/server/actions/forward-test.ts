@@ -8,7 +8,11 @@ import { forwardTests, strategies, strategyVersions } from "@/db/schema";
 import { ZERO_BROKERAGE, nseEquityDelivery } from "@/domain/costs";
 import { DEFAULT_PLANNED_SESSIONS, SESSION_WINDOW } from "@/domain/forward-test";
 import { PLACEHOLDER_CALENDAR_2026, addSessions } from "@/domain/session";
-import { validateStrategyDefinition, type StrategyDefinition } from "@/domain/strategy";
+import {
+  resolveDefinition,
+  validateStrategyDefinition,
+  type StrategyDefinition,
+} from "@/domain/strategy";
 import { toSymbol } from "@/domain/symbol";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
@@ -109,7 +113,7 @@ export async function startForwardTest(input: {
      * arranged to prevent.
      */
     const source = await liveEndOfDaySource();
-    const latestBar = await source.latestBar(toSymbol(definition.instruments[0]));
+    const latestBar = await source.latestBar(toSymbol(resolveDefinition(definition).instruments[0]));
     if (!latestBar) {
       return { ok: false, error: "No price history is loaded for that instrument." };
     }

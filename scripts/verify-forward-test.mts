@@ -38,7 +38,13 @@ const { formatPaise } = await import("@/domain/money");
 
 const ROLLBACK = "ROLLBACK_ON_PURPOSE";
 
-const definition = { ...starterDefinition(), instruments: ["NSE:RELIANCE", "NSE:TCS"] };
+const definition = {
+  ...starterDefinition(),
+  universe: { instruments: ["NSE:RELIANCE", "NSE:TCS"], minAvgTurnoverPaise: null },
+  // The starter sizes from the stop; this script's expected figures were
+  // computed against a flat slice of capital, so it keeps V1's rule.
+  sizing: { kind: "CAPITAL_PERCENT" as const, percent: 25 },
+};
 const costModel = nseEquityDelivery({ brokerage: ZERO_BROKERAGE, slippagePercent: 0.05 });
 
 /** Far enough back that the loaded history has already run the window out. */
@@ -127,7 +133,11 @@ try {
       });
 
       if (first.status !== "ADVANCED") {
-        check(false, "first advance", first.reason);
+        check(
+          false,
+          "first advance",
+          first.status === "PENDING" ? `window not open since ${first.startedOn}` : first.reason,
+        );
         throw new Error(ROLLBACK);
       }
 

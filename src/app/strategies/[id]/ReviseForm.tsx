@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { StrategyForm } from "@/components/advisor/StrategyForm";
-import type { InstrumentChoice, StrategyDefinition } from "@/domain/strategy";
+import { upgradeToV2, type InstrumentChoice, type StrategyDefinition } from "@/domain/strategy";
 import { reviseStrategy } from "@/server/actions/strategy";
 
 export function ReviseForm({
@@ -50,7 +50,7 @@ export function ReviseForm({
         catalogue={catalogue}
         changeNote={changeNote}
         onChangeNote={setChangeNote}
-        initial={{ name, description, hypothesis, definition }}
+        initial={{ name, description, hypothesis, definition: upgradeToV2(definition) }}
         onSubmit={async (values) => {
           const result = await reviseStrategy({
             strategyId,

@@ -9,7 +9,7 @@ import {
   type PendingOrder,
   type PositionState,
 } from "./session-step";
-import { requiredWarmUpBars, type StrategyDefinition } from "./strategy";
+import { requiredWarmUpBars, resolveDefinition, type StrategyDefinition } from "./strategy";
 
 /**
  * The backtest engine.
@@ -145,8 +145,14 @@ type SymbolState = {
 };
 
 export function runBacktest(input: BacktestInput): BacktestOutcome {
-  const { definition, costModel } = input;
-  const warmUp = requiredWarmUpBars(definition);
+  const { costModel } = input;
+
+  // Both stored versions normalise here, once. Everything below reads the
+  // resolved shape, so a V1 definition recorded before V2 existed replays to
+  // exactly the numbers it always produced — which is what makes an
+  // append-only run reproducible years later rather than merely stored.
+  const definition = resolveDefinition(input.definition);
+  const warmUp = requiredWarmUpBars(input.definition);
 
   const symbols = [...definition.instruments].sort();
   if (symbols.length === 0) throw new BacktestError("the definition names no instruments");

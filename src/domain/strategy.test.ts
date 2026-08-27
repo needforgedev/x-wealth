@@ -8,16 +8,16 @@ import {
   starterDefinition,
   validateStrategyDefinition,
   type InstrumentChoice,
-  type StrategyDefinition,
+  type StrategyDefinitionV2,
 } from "./strategy";
 
-const valid = (overrides: Partial<StrategyDefinition> = {}): StrategyDefinition => ({
+const valid = (overrides: Partial<StrategyDefinitionV2> = {}): StrategyDefinitionV2 => ({
   ...starterDefinition(),
-  instruments: ["NSE:RELIANCE", "NSE:TCS"],
+  universe: { instruments: ["NSE:RELIANCE", "NSE:TCS"], minAvgTurnoverPaise: null },
   ...overrides,
 });
 
-const fields = (d: StrategyDefinition) => validateStrategyDefinition(d).map((i) => i.field);
+const fields = (d: StrategyDefinitionV2) => validateStrategyDefinition(d).map((i) => i.field);
 
 describe("a usable strategy", () => {
   it("passes", () => {
@@ -33,16 +33,16 @@ describe("a usable strategy", () => {
 
 describe("instruments", () => {
   it("requires exchange qualification", () => {
-    expect(fields(valid({ instruments: ["RELIANCE"] }))).toContain("instruments");
+    expect(fields(valid({ universe: { instruments: ["RELIANCE"], minAvgTurnoverPaise: null } }))).toContain("instruments");
   });
 
   it("rejects duplicates", () => {
-    const issues = validateStrategyDefinition(valid({ instruments: ["NSE:TCS", "NSE:TCS"] }));
+    const issues = validateStrategyDefinition(valid({ universe: { instruments: ["NSE:TCS", "NSE:TCS"], minAvgTurnoverPaise: null } }));
     expect(issues.some((i) => i.message.includes("twice"))).toBe(true);
   });
 
   it("rejects an empty list", () => {
-    expect(fields(valid({ instruments: [] }))).toContain("instruments");
+    expect(fields(valid({ universe: { instruments: [], minAvgTurnoverPaise: null } }))).toContain("instruments");
   });
 });
 
@@ -125,8 +125,8 @@ describe("numeric bounds", () => {
   });
 
   it("rejects position sizing outside 1–100%", () => {
-    expect(fields(valid({ positionSizePercent: 0 }))).toContain("positionSizePercent");
-    expect(fields(valid({ positionSizePercent: 250 }))).toContain("positionSizePercent");
+    expect(fields(valid({ sizing: { kind: "CAPITAL_PERCENT" as const, percent: 0 } }))).toContain("positionSizePercent");
+    expect(fields(valid({ sizing: { kind: "CAPITAL_PERCENT" as const, percent: 250 } }))).toContain("positionSizePercent");
   });
 
   it("insists capital is a whole number of paise", () => {
@@ -162,8 +162,8 @@ describe("definitionsDiffer", () => {
     // version would pollute the iteration ledger.
     expect(
       definitionsDiffer(
-        valid({ instruments: ["NSE:RELIANCE", "NSE:TCS"] }),
-        valid({ instruments: ["NSE:TCS", "NSE:RELIANCE"] }),
+        valid({ universe: { instruments: ["NSE:RELIANCE", "NSE:TCS"], minAvgTurnoverPaise: null } }),
+        valid({ universe: { instruments: ["NSE:TCS", "NSE:RELIANCE"], minAvgTurnoverPaise: null } }),
       ),
     ).toBe(false);
   });
@@ -189,7 +189,7 @@ describe("validation against the instrument catalogue", () => {
     { symbol: "NSE:MIDCPNIFTY", name: "Nifty Midcap Select", tradeable: false, barCount: 1144 },
   ];
 
-  const messages = (d: StrategyDefinition) =>
+  const messages = (d: StrategyDefinitionV2) =>
     validateStrategyDefinition(d, CATALOGUE).map((i) => i.message);
 
   it("accepts instruments that are loaded and tradeable", () => {
@@ -199,8 +199,8 @@ describe("validation against the instrument catalogue", () => {
 
   it("rejects a well-formed symbol that has no price history", () => {
     // Passes the shape check; fails the only one that matters.
-    expect(validateStrategyDefinition(valid({ instruments: ["NSE:FOO"] }))).toEqual([]);
-    expect(messages(valid({ instruments: ["NSE:FOO"] }))).toContainEqual(
+    expect(validateStrategyDefinition(valid({ universe: { instruments: ["NSE:FOO"], minAvgTurnoverPaise: null } }))).toEqual([]);
+    expect(messages(valid({ universe: { instruments: ["NSE:FOO"], minAvgTurnoverPaise: null } }))).toContainEqual(
       expect.stringContaining("no price history loaded"),
     );
   });
@@ -209,14 +209,14 @@ describe("validation against the instrument catalogue", () => {
     // NIFTY 50 has a price and nothing to buy. Without this the engine would
     // fill at the spot price — a number that looks entirely ordinary and
     // describes a trade nobody could place.
-    expect(messages(valid({ instruments: ["NSE:NIFTY50"] }))).toContainEqual(
+    expect(messages(valid({ universe: { instruments: ["NSE:NIFTY50"], minAvgTurnoverPaise: null } }))).toContainEqual(
       expect.stringContaining("is an index"),
     );
   });
 
   it("rejects rules that can never warm up on the history available", () => {
     const tooLong = valid({
-      instruments: ["NSE:MIDCPNIFTY"],
+      universe: { instruments: ["NSE:MIDCPNIFTY"], minAvgTurnoverPaise: null },
       entry: {
         left: { kind: "SMA", period: 400 },
         comparator: "CROSSES_ABOVE",
@@ -234,7 +234,7 @@ describe("validation against the instrument catalogue", () => {
     ];
     const issues = validateStrategyDefinition(
       valid({
-        instruments: ["NSE:RELIANCE"],
+        universe: { instruments: ["NSE:RELIANCE"], minAvgTurnoverPaise: null },
         entry: {
           left: { kind: "SMA", period: 200 },
           comparator: "CROSSES_ABOVE",
@@ -249,7 +249,7 @@ describe("validation against the instrument catalogue", () => {
   });
 
   it("still checks everything it checked without a catalogue", () => {
-    expect(validateStrategyDefinition(valid({ instruments: [] }), CATALOGUE).length).toBeGreaterThan(0);
+    expect(validateStrategyDefinition(valid({ universe: { instruments: [], minAvgTurnoverPaise: null } }), CATALOGUE).length).toBeGreaterThan(0);
   });
 });
 

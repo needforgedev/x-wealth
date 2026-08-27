@@ -4,7 +4,7 @@ import { runBacktest } from "./backtest";
 import { ZERO_BROKERAGE, chargesForLeg, nseEquityDelivery } from "./costs";
 import { ohlcBars, type OhlcRow } from "./market-data-fixture";
 import { positionValue, priceFromString, type PriceTicks } from "./money";
-import { starterDefinition, type StrategyDefinition } from "./strategy";
+import { starterDefinition, type StrategyDefinitionV2 } from "./strategy";
 
 /**
  * **Gate G4** — `plan.md` W5-08: *"hand-calculate 20 trades and assert the
@@ -55,13 +55,13 @@ const CAPITAL_PAISE = 10_000_000; // ₹1,00,000
  * Price and constants only — no indicator, so there is no warm-up between the
  * first bar and the first signal and every date in the fixture is accounted for.
  */
-const RULES: StrategyDefinition = {
+const RULES: StrategyDefinitionV2 = {
   ...starterDefinition(),
-  instruments: ["NSE:TEST"],
+  universe: { instruments: ["NSE:TEST"], minAvgTurnoverPaise: null },
   entry: { left: { kind: "PRICE" }, comparator: "BELOW", right: { kind: "CONSTANT", value: 100 } },
   exit: { left: { kind: "PRICE" }, comparator: "ABOVE", right: { kind: "CONSTANT", value: 110 } },
   stopLossPercent: 5,
-  positionSizePercent: 100,
+  sizing: { kind: "CAPITAL_PERCENT" as const, percent: 100 },
   initialCapitalPaise: CAPITAL_PAISE,
 };
 
