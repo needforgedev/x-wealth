@@ -145,20 +145,41 @@ export type RunResults = {
 };
 
 /**
- * AI critique output. Structured findings, never a prose verdict — "42 trades
- * is below the threshold for statistical confidence at this win rate", never
- * "this strategy is weak" (`x-wealth-product.md` §5.5).
+ * One thing the model noticed, with the evidence for it attached.
+ *
+ * Structured findings, never a prose verdict — *"42 trades is below the
+ * threshold for statistical confidence at this win rate"*, never *"this
+ * strategy is weak"* (`CLAUDE.md` §7.11, §8.7). The shape is the constraint:
+ * an observation has to carry the numbers it rests on, and there is nowhere to
+ * put a grade.
  */
-export type CritiqueFindings = {
-  findings: Array<{
-    category:
-      | "OVERFITTING"
-      | "SAMPLE_ADEQUACY"
-      | "REGIME_DEPENDENCE"
-      | "LIQUIDITY"
-      | "DRAWDOWN"
-      | "EXPLANATION";
-    observation: string;
-    evidence: Record<string, unknown>;
-  }>;
+export type AiFinding = {
+  category:
+    | "OVERFITTING"
+    | "SAMPLE_ADEQUACY"
+    | "REGIME_DEPENDENCE"
+    | "LIQUIDITY"
+    | "DRAWDOWN"
+    | "EXPLANATION";
+  observation: string;
+  evidence: Record<string, unknown>;
+};
+
+/**
+ * What a model returned, as stored in `ai_interactions.output`.
+ *
+ * Deliberately an open record rather than a union of five payloads. Only one
+ * context has a settled output shape today — findings, above — and inventing
+ * the other four now would freeze guesses about `W15-04`, `W4-12` and `W7`
+ * into a column type before those modules exist. Each defines and parses its
+ * own payload; this type carries the part that is common to all of them.
+ *
+ * What *is* fixed is the envelope: structured data with a named kind, never
+ * prose. `CLAUDE.md` §7.11 requires the model to emit tool output rather than
+ * text, because a paragraph cannot be checked for a verdict and a JSON object
+ * with no verdict field can.
+ */
+export type AiOutput = {
+  readonly kind: string;
+  readonly [key: string]: unknown;
 };

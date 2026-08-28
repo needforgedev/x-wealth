@@ -1,6 +1,6 @@
 # X-Wealth — Delivery Plan & Tracker
 
-**Owner:** J · **Started:** 18 Aug 2026 · **Last updated:** 26 Aug 2026
+**Owner:** J · **Started:** 18 Aug 2026 · **Last updated:** 28 Aug 2026
 **Direction:** v2 — single-persona AI strategy lab. See `CLAUDE.md`.
 
 This is the working tracker. It turns `CLAUDE.md` into numbered, checkable work
@@ -50,14 +50,31 @@ renumbered, so they can be referenced in commits and PRs.
 | `trading-domain-primer.md` | How markets and strategies actually work — intrabar, expectancy, costs, backtest failure modes | Before touching W5, W6, W18 |
 | `plan.md` (this file) | Engineering delivery + live status | Daily |
 | `AGENTS.md` | Next.js version note, machine-written by `next dev` | When Next behaves unexpectedly |
-| `CLAUDE-v1-ARCHIVED-advisor-marketplace.md` | The abandoned v1 spec. Historical only | Never, for building |
-| `x-wealth-product.md` | **Byte-identical duplicate of the archived v1.** Un-archived by name only | Never — see `W10-12` |
+| `x-wealth-product.md` | **The abandoned v1 spec**, and the only copy of it in the repo. Its name reads as current and is not — rename tracked at `W10-12` | Never, for building |
 | `execution-plan.md` | v1 business plan: RA acquisition, revenue share, gates G1–G7 | **Stale.** Rewrite tracked at `W10-13` |
 | `PRD X Wealth Agent for Digital Asset Markets.md` | Pre-v1 crypto-era PRD | Never. Crypto is out of scope (`CLAUDE.md` §10) |
 
-> Code comments across `src/db/schema/*` cite `x-wealth-product.md §5.x`. Those
-> section numbers no longer resolve to anything current. Re-point them at
-> `CLAUDE.md` §8 as each file is touched — tracked at `W10-14`.
+> **`CLAUDE.md` and `trading-domain-primer.md` were added to the repo on 28 Aug
+> 2026.** They had lived on the author's Desktop since the pivot — unversioned,
+> unbacked-up, and invisible to any tooling — while `plan.md` cited `CLAUDE.md`
+> by section number roughly fifty times and called it the thing to read before
+> writing any code. The only `CLAUDE.md` ever committed before this was a
+> one-line stub, added in `54d3c4f` and deleted in `8e53443`.
+>
+> Two consequences worth knowing. A `CLAUDE.md` at the repo root is loaded
+> automatically as project instructions by Claude Code, which is the intended
+> effect and is now the case. And every §-citation in this file and in code
+> comments can finally be checked by a reader who has only the repo.
+
+> Code comments cite `x-wealth-product.md §5.x` in **62 places across 33
+> files**. Those section numbers resolve correctly against that document — it
+> *is* the v1 spec — but the name does not say so. Re-pointing them is `W10-14`
+> and belongs in the same change as the `W10-12` rename, not before it.
+>
+> ⚠️ Two of those 33 files are shipped migrations (`0002`, `0006`).
+> `drizzle.__drizzle_migrations` stores a content hash per migration, so editing
+> one — even a comment — makes the stored hash a lie. Exclude them from any
+> mechanical pass; a citation inside a migration is dated by the migration.
 
 ---
 
@@ -83,13 +100,15 @@ prohibits.
 - [x] **D-09** **Forward-test engine** — `src/domain/forward-test.ts` + `src/server/forward-test/{advance,replay}.ts`; DB-enforced parameter freeze proven by 14 raw-SQL attacks (`npm run verify-freeze`)
 - [x] **D-10** **Market data layer** — `MarketDataSource` interface, EOD source, Upstox v3 adapter, conformance suite, universe + catalogue, `migration 0008`
 - [x] **D-11** 7,514 lines of tested domain logic in `src/domain/`
+- [x] **D-13** **AI interaction log** — `ai_interactions` (migration `0013`) plus `src/server/ai/`: the provider interface, a stub, and `runInteraction`, which does not return model output until the row is committed. 12 tests, invariants proven under `service_role`. **No provider is wired — see W15-01**
 - [x] **D-12** **Evening scheduler** — `.github/workflows/forward-tests.yml` (load → advance → health check, weekdays 16:45 IST) plus `npm run check-forward-tests`, which catches the case the jobs themselves cannot: succeeded, and nothing happened
 
 ### Not built
 
 | Layer | State |
 |---|---|
-| **AI — any of it** | **Zero.** No provider dependency installed, no code. `ai_critiques` is an empty table |
+| **AI — the model half** | **Zero.** No provider dependency, no key, no billing (`AD-11`, W15-01). `resolveProvider()` returns a stub whose `metadata.live` is false |
+| AI — the logging half | **Built and verified** (W15-02, W15-03). `ai_interactions` is live; `runInteraction` is the only route to a provider and records before it returns |
 | Hypothesis workbench | Not started. New in v2 |
 | Adversarial backtest suite | Not started. No walk-forward, sensitivity, regime slice or Monte Carlo |
 | Annotation layer | Not started. New in v2 |
@@ -283,7 +302,7 @@ Each needs a date to count as decided. Recommendations are marked ⭐.
 | **AD-08** | Market data | **`MarketDataSource` interface + conformance suite.** EOD and Upstox implementations both pass it | ✅ **Settled in code** |
 | **AD-09** | Scheduler | **GitHub Actions, `.github/workflows/forward-tests.yml`, weekdays 16:45 IST.** Chosen over a Vercel cron because both jobs are already `tsx` entry points that Actions runs unchanged — no API route duplicating a script — and because the loader makes six sequential vendor calls before it writes, which is the wrong shape for a serverless timeout | ✅ **Decided 26 Aug 2026** |
 | **AD-10** | KYC document storage | Private bucket, signed URLs, access-logged | ➖ **Moot** — no KYC in v2 (W2 dropped). Retain the pattern for any future PII |
-| **AD-11** | AI provider | ⭐ Claude, structured tool output (not prose), every call persisted. **No provider dependency is installed yet** | ☐ Open — **now on the critical path** |
+| **AD-11** | AI provider | ⭐ Claude, structured tool output (not prose), every call persisted. **Still open, and the only part of W15 with an external dependency** — it needs an account, a key and billing. The seam is built and waiting: `resolveProvider()` in `src/server/ai/registry.ts` is the single function that changes | ☐ Open — **critical path, blocked on procurement not engineering** |
 | **AD-12** | Test stack | **Vitest** + Playwright ad hoc | ✅ **Decided 19 Aug 2026** |
 | **AD-13** | Hosting | **Vercel + Supabase**; engine runner TBD with AD-09 | ✅ **Decided 18 Aug 2026** |
 | **AD-14** | ~~Ship M6 standalone before M7?~~ | — | ➖ **Moot** — there is no M7. The tool *is* the product |
@@ -292,8 +311,8 @@ Each needs a date to count as decided. Recommendations are marked ⭐.
 | **AD-17** | **What is Phase 1?** `CLAUDE.md` §7 runs 0, 2, 3, 4, 5, 6. ⭐ Read it as foundation + market data (W1, W3) · or renumber the phases | ☐ Open |
 | **AD-18** | **What happens to the v1 UI?** **Deleted on `v2-teardown`, tagged `v1-marketplace-final` first.** `/screens` went with it rather than being kept — roughly forty of its ~53 links pointed at removed routes, and a broken index is worse than none | ✅ **Decided 27 Aug 2026** |
 | **AD-19** | **How is the pre-lock holdout protected?** ⭐ Holdout is sealed until the parameter lock and revealed exactly once, in the attack report · shown every run and merely labelled · per-strategy iteration budget. See **B-11** | ☐ Open |
-| **AD-20** | **`ai_critiques` → `ai_interactions`.** v2 §9 widens it: `user_id`, `context_type`, applies to hypothesis / compile / critique / post-mortem / digest, not just forward tests. ⭐ New table + migrate the (currently empty) old one · widen in place | ☐ Open |
-| **AD-21** | **AI sequencing.** The AI is now four modules, not one. ⭐ Build W15 first — it is the smallest surface, it forces the `ai_interactions` logging discipline early, and every later module reuses that plumbing · build W7 first · build them together | ☐ Open |
+| **AD-20** | **`ai_critiques` → `ai_interactions`.** **New table; `ai_critiques` dropped in `0013`.** Widening in place would have meant making `forward_test_id` nullable — the only thing that column was for — while keeping `advisor_acted`, a persona deleted in `0010`, and the name `ai_critiques` on a table where four of five contexts are not critiques. The old table held **zero rows**, checked on the live database first, so nothing recorded was rewritten | ✅ **Decided 28 Aug 2026** |
+| **AD-21** | **AI sequencing. W15 first**, and within it the logging spine before any model call. Reasoning held up in the build: `W15-02`/`W15-03` needed no provider, no key and no network, so the discipline every later module inherits is in place and tested while `AD-11` is still open. W4-12, W7, W18-08 and W22 all now hang off `runInteraction` rather than each inventing their own logging | ✅ **Decided 28 Aug 2026** |
 | **AD-22** | **Does `paper_trades` stay the forward-test ledger once `signal_events` and `execution_records` land?** v2 §9 has all three. Overlapping ledgers on append-only tables cannot be reconciled after the fact | ☐ Open |
 
 ### Supabase + Drizzle — things that will bite us
@@ -489,11 +508,11 @@ component itself is going.
 - [-] **W10-11** ~~Send Signal → Preview artboard~~ — signals are gone
 - [x] **W10-06** **Done 27 Aug 2026.** Teardown migration `0009`. Drop the distribution schema — groups, `group_strategies`, `group_invitations`, subscriptions, pricing tiers, signals, `market_views` — **unwinding each table's append-only trigger and grant in the same transaction**, or `db:verify` reports orphans forever
 - [ ] **W10-07** Resolve any remaining v1 doc contradictions — largely moot now that `CLAUDE.md` is the single source
-- [b] **W10-09** Ban list as a lint rule — **still unbuilt, and it cost us**: the landing page kept "Verified Experts", "Quality Signals" and "certified experts" through the whole identity collapse because typecheck, lint, build and 276 tests cannot see marketing copy (fixed by hand 27 Aug 2026). Blocked on nothing: no "verified", "top-rated", "high-performing", "best" copy anywhere (§8.7). **Still needed — this one survives the pivot intact**
+- [x] **W10-09** **Done 27 Aug 2026.** Ban list as a lint rule — `eslint-rules/no-performance-claims.mjs`, wired into `eslint.config.mjs` over `src/**` and attacked by RuleTester in both directions (14 valid, 10 invalid). It reads string literals, template chunks and JSX text; deliberately **not** comments, since every current mention in the codebase is a note recording what was removed. `best` and `expert` are off the list on purpose — "best bid" is an order-book level and `EXPERT` is an `experience_level` value, and a rule that fails on correct vocabulary gets suppressed within a week. **It cannot see model output at runtime**; that needs a validator on the structured output before it is stored, which is W7's job. Original note kept below because it is why the rule exists: the landing page kept "Verified Experts", "Quality Signals" and "certified experts" through the whole identity collapse because typecheck, lint, build and 276 tests cannot see marketing copy (fixed by hand 27 Aug 2026). No "verified", "top-rated", "high-performing" copy anywhere (§8.7) — now enforced rather than intended.
 - [-] **W10-10** ~~Replace the `/alpha` placeholder assets~~ — moot, `/alpha` is gone (AD-18)
-- [ ] **W10-12** **New.** Delete or rename `x-wealth-product.md`. It is byte-identical to `CLAUDE-v1-ARCHIVED-advisor-marketplace.md` and its name reads as current
+- [~] **W10-12** **New.** Rename `x-wealth-product.md` → `CLAUDE-v1-ARCHIVED-advisor-marketplace.md`. **Partly addressed 28 Aug 2026**: the real `CLAUDE.md` is now in the repo, so there is a source of truth to be *distinguished from* rather than two documents of equal apparent standing. What remains is the rename itself, and it should land in the same change as `W10-14` — renaming first would orphan 62 citations, and re-pointing first would leave them aimed at a name about to change. **Do not delete the file**: it is the only copy of the v1 spec in the repo, and those 62 §5.x citations resolve correctly against it
 - [ ] **W10-13** **New.** Rewrite `execution-plan.md` for v2, or archive it. It plans RA acquisition, revenue share and gates G1–G7 against a business that no longer exists
-- [ ] **W10-14** **New.** Re-point `x-wealth-product.md §5.x` citations across `src/db/schema/*` at `CLAUDE.md` §8. They currently resolve to a dead document
+- [ ] **W10-14** **New.** Re-point the `x-wealth-product.md §5.x` citations. Scoped 28 Aug 2026: **62 occurrences across 33 files**, not just `src/db/schema/*` — the domain modules, server actions, queries, two components and `verify_invariants.sql` all carry them. Two decisions per citation, and only the first is mechanical: the filename, and whether the invariant's real home is now `CLAUDE.md` §8 or genuinely is v1 history. **Exclude `drizzle/0002` and `0006`** — migrations are content-hashed in `drizzle.__drizzle_migrations`, so editing a shipped one makes its stored hash a lie, and a citation inside a migration is correctly dated by it anyway. Land with `W10-12`
 - [x] **W10-15** **Done 27 Aug 2026.** Removed the prohibited routes — `/groups/*`, `/group-invitations`, `/discover*`, `/chats`, `/signals`, `/investor/{discover,groups}`, `/advisor/{groups,create-group,signals,chats,pricing}`, `/portfolio/groups`, `/profile/favourites`, `/account/{choose,switch}`, and the `/alpha` tree per AD-18
 - [x] **W10-16** **Done 27 Aug 2026.** Removed `src/components/{groups,chat}`, `src/server/actions/{group,invitation,signal}.ts`, and the group/signal query modules
 - [x] **W10-17** **Done 27 Aug 2026.** Deleted `src/domain/signal.ts` and its 26 tests. A signal in v2 is `signal_events` — an internal record of what a strategy fired, never something delivered to another person
@@ -527,9 +546,9 @@ component itself is going.
 
 ### W15 — Hypothesis Workbench *(§7.2 — new)*
 
-- [ ] **W15-01** AI provider wired (AD-11), structured tool output, **not prose**
-- [ ] **W15-02** `ai_interactions` table per AD-20 — `user_id`, `context_type`, `input_snapshot`, `output`, `user_acted`, `resulting_version_id`
-- [ ] **W15-03** Every call logged before the response is shown. **Not after, not best-effort** — the log is the Reg 16C evidence, and a call that failed to log is a call that did not happen
+- [b] **W15-01** AI provider wired (AD-11), structured tool output, **not prose** — **blocked on AD-11**, which needs an account, a key and billing rather than engineering. The interface, the stub and the resolution seam are built: `src/server/ai/{provider,stub,registry}.ts`. Closing it is expected to be one file
+- [x] **W15-02** **Done 28 Aug 2026.** `ai_interactions` per AD-20 — migration `0013`, replacing `ai_critiques`. Append-only by trigger with the same two permitted mutations the old table had, `DELETE` revoked, and three CHECKs that reject rather than pass on NULL (the `0012` lesson applied at the point of writing rather than after): a HYPOTHESIS or DIGEST may name no subject, a POST_MORTEM must name its forward test, and `resulting_version_id` implies `user_acted`. **Every rejection was checked for its reason, not just for failing** — the `0011` lesson — and each names its own constraint or trigger. Holds under `service_role`, including with the revoked `DELETE` grant deliberately handed back, so it is the trigger doing the work and not the grant
+- [x] **W15-03** **Done 28 Aug 2026.** Every call logged before the response is shown. **Not after, not best-effort.** `runInteraction` calls the provider, records the row, and only then returns — and it resolves both the provider and the log itself, so an ordinary call site never holds a provider and has no route to `complete`. `AiLogError` deliberately carries no output: an error is a value a caller can inspect, so an error carrying the model's answer would be the same leak wearing a different shape. `model_id` comes from the response rather than the caller, or the log would record a claim about which model ran instead of a record of it. 12 tests, including one that holds the write open and asserts the promise has not resolved, and one locking the barrel's runtime exports so a provider cannot quietly appear on it
 - [ ] **W15-04** AI helps articulate a **falsifiable** hypothesis and challenges the premise
 - [ ] **W15-05** Surfaces prior art
 - [ ] **W15-06** **It must not generate ideas from price data.** Scanning data for patterns is p-hacking at the source (§7.2). This is a prompt constraint *and* a tool-access constraint — the workbench model gets no market-data tool
@@ -751,6 +770,9 @@ before more work lands on a schema with the wrong shape.
 
 | Date | Change |
 |---|---|
+| **28 Aug 2026** | **`CLAUDE.md` and `trading-domain-primer.md` moved into the repo.** Both had sat on the author's Desktop since the 26 Aug pivot — unversioned, unbacked-up, and unreadable by any tooling — while this file cited `CLAUDE.md` by section number roughly fifty times and named it the document to read before writing any code. The only `CLAUDE.md` ever committed was a one-line stub, deleted in `8e53443`. A `CLAUDE.md` at the repo root is also auto-loaded as project instructions, so the source of truth now reaches every session by default instead of by memory. `x-wealth-product.md` was left alone: it is byte-identical to the Desktop's archived v1 copy, so nothing needed importing, and renaming it belongs with `W10-14`'s 62 citations rather than ahead of them. |
+| **28 Aug 2026** | **The AI logging spine (W15-02, W15-03; AD-20, AD-21 decided).** Migration `0013` replaces `ai_critiques` with `ai_interactions` — the old table anchored every row to a forward test, which is the one thing four of the five v2 context types do not have, and it held zero rows so nothing recorded was rewritten. `src/server/ai/` is the provider interface, a stub, and `runInteraction`, which does not hand back model output until the row is committed. **Deliberately built with no provider**: `AD-11` needs an account, a key and billing, and none of `W15-02`/`W15-03` needed a model to be right — the property that matters is an ordering, and proving it needs a log that can be made to fail, which a real table cannot do. Three CHECKs written `coalesce(..., false)` from the start rather than after the fact, and every negative case run individually to confirm it was rejected by its own constraint rather than by a typo. `db:verify` now covers the new table in its `service_role` phase; with the revoked `DELETE` grant handed back inside a rolled-back transaction, the trigger still refuses. 301 tests. |
+| **27 Aug 2026** | **Performance-claims lint rule (W10-09).** The one guard that survived the pivot unchanged and had been open since the file was written. Nothing else in CI can read prose — typecheck, lint, build and 276 tests all passed while the landing page pitched "certified experts" — so this reads string literals, template chunks and JSX text across `src/**` and fails on §8.7 language. Attacked in both directions, because a rule that flags legitimate trading vocabulary ("best bid") gets suppressed within a week and then protects nothing. `layout.tsx`'s page description, which renders nowhere in the app and therefore survived every previous pass, went with it. |
 | **27 Aug 2026** | **Strategy definition v2 (W4-08, W4-09, W4-11).** Versioned rather than edited: a `version:1` definition is frozen inside the RUNNING forward test and six `strategy_versions` are append-only, so `StrategyDefinitionV1` is frozen, V2 is what gets authored, and `resolveDefinition` normalises both into one shape the engine consumes. Sizing now derives quantity from the stop. Liquidity floor applied in `signalsFor`, backward-looking, gating entries and not exits. Migrations `0011`/`0012` add the completeness CHECK — **`0011` enforced nothing**, because a CHECK passes when its expression is NULL and a missing key yields NULL rather than false; the ad-hoc test that "proved" it reused one `version_no`, so every attempt after the first failed on the unique index and reported a pass. `verify_invariants.sql` caught it on the second case. Two engine bugs found and fixed on the way: risk sizing divided paise by price ticks (100× too large, silently), and a just-started forward test halted the evening job nightly because its window opens on the *next* session. 288 tests. |
 | **27 Aug 2026** | **Landing page corrected.** It survived the identity collapse untouched — no schema imports, so nothing in CI could see that it still pitched "quality trading signals by certified experts", ticked "Verified Experts"/"Quality Signals" (§8.7 names both), and routed an Advisor tab at a deleted route. |
 | **27 Aug 2026** | **Identity collapsed (W24) and the distribution schema dropped (W10-06).** Migrations `0009` and `0010` applied to the live database: 22 tables → 12. `advisors` + `investors` → one `users` table, `strategies` and `portfolio_entries` repointed, KYC and PaRRVA fields gone, `interests` gone with the discovery feed it fed. `requirePublishingRights` deleted rather than left permanently allowing. Routes re-homed to top level; `/advisor/*`, `/investor`, `/ops`, `/choose-interests` removed. **W24-08 verified** — the freeze and the append-only triggers survived the FK rewrite, under `service_role`, and the engine still reconciles to four decimals. Data intact: 2 users, 4 strategies with owners, 5 versions, 5 backtest runs. Also fixed `db-migrate.mjs`, which reported "✓ migrations applied" having applied nothing because `migrate()` reads the journal rather than the folder — it now refuses to start when a numbered migration on disk has no journal entry. 276 tests green. |

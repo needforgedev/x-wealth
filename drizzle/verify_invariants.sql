@@ -169,6 +169,54 @@ SELECT pg_temp.must_reject('a direction the engine cannot execute',
 SELECT pg_temp.must_reject('a version this build does not understand',
   $$insert into strategy_versions(strategy_id,version_no,definition) values ('50000000-0000-0000-0000-0000000000ff',101,'{"version": 3, "universe": {"instruments": ["NSE:RELIANCE"], "minAvgTurnoverPaise": null}, "timeframe": "1d", "direction": "LONG", "entry": {"left": {"kind": "PRICE"}, "comparator": "ABOVE", "right": {"kind": "CONSTANT", "value": 1}}, "exit": {"left": {"kind": "PRICE"}, "comparator": "BELOW", "right": {"kind": "CONSTANT", "value": 1}}, "targetPercent": null, "stopLossPercent": 5, "sizing": {"kind": "RISK_PERCENT", "riskPercent": 1}, "maxConcurrentPositions": 1, "maxExposurePercent": 100, "initialCapitalPaise": 10000000}'::jsonb)$$);
 
+\echo '--- ai_interactions: the log is the evidence (3 fact 2, 8.6) ---'
+-- W15-02 / AD-20. Every AI call is recorded before its output is shown, and the
+-- record cannot afterwards be changed into a different one. `user_acted` and
+-- `resulting_version_id` are the two exceptions: they are set once, by the
+-- user's own action, and are unknowable at insert time.
+INSERT INTO ai_interactions(id, user_id, context_type, input_snapshot, output,
+                            model_id, prompt_version) VALUES
+  ('e0000000-0000-0000-0000-0000000000ff', 'a0000000-0000-0000-0000-0000000000ff',
+   'HYPOTHESIS', '{"idea": "verification fixture"}'::jsonb,
+   '{"kind": "HYPOTHESIS"}'::jsonb, 'stub-0', 'verify/1');
+
+SELECT pg_temp.must_reject('rewrite what the model was shown',
+  $$update ai_interactions set input_snapshot='{"idea":"something else"}'::jsonb where id='e0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('rewrite what the model returned',
+  $$update ai_interactions set output='{"kind":"HYPOTHESIS","edited":true}'::jsonb where id='e0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('attribute the call to a different model',
+  $$update ai_interactions set model_id='something-better' where id='e0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('re-file the call under a different context',
+  $$update ai_interactions set context_type='CRITIQUE' where id='e0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('DELETE a recorded interaction',
+  $$delete from ai_interactions where id='e0000000-0000-0000-0000-0000000000ff'$$);
+
+SELECT pg_temp.must_allow('record that the user acted, once',
+  $$update ai_interactions set user_acted=true, resulting_version_id='c0000000-0000-0000-0000-0000000000ff' where id='e0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('un-record that the user acted',
+  $$update ai_interactions set user_acted=false where id='e0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('point the outcome at a different version',
+  $$update ai_interactions set resulting_version_id=null where id='e0000000-0000-0000-0000-0000000000ff'$$);
+
+-- 7.2: a hypothesis written against a strategy you have already backtested is a
+-- rationalisation. The workbench may not be anchored to one, and that holds in
+-- the database rather than in the prompt.
+SELECT pg_temp.must_reject('a hypothesis anchored to an existing version',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,strategy_version_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','HYPOTHESIS','{}'::jsonb,'{"kind":"HYPOTHESIS"}'::jsonb,'stub-0','verify/1','c0000000-0000-0000-0000-0000000000ff')$$);
+SELECT pg_temp.must_reject('a digest about one forward test',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,forward_test_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','DIGEST','{}'::jsonb,'{"kind":"DIGEST"}'::jsonb,'stub-0','verify/1','f0000000-0000-0000-0000-0000000000ff')$$);
+SELECT pg_temp.must_reject('a post-mortem of nothing',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version)
+    values ('a0000000-0000-0000-0000-0000000000ff','POST_MORTEM','{}'::jsonb,'{"kind":"POST_MORTEM"}'::jsonb,'stub-0','verify/1')$$);
+SELECT pg_temp.must_reject('a version authored off an interaction nobody acted on',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,resulting_version_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','COMPILE','{}'::jsonb,'{"kind":"COMPILE"}'::jsonb,'stub-0','verify/1','c0000000-0000-0000-0000-0000000000ff')$$);
+SELECT pg_temp.must_allow('a post-mortem of its own forward test',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,forward_test_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','POST_MORTEM','{}'::jsonb,'{"kind":"POST_MORTEM"}'::jsonb,'stub-0','verify/1','f0000000-0000-0000-0000-0000000000ff')$$);
+
 \echo '--- soft-delete guard (5.1) ---'
 SELECT pg_temp.must_allow('assert_no_soft_delete_columns() on a clean schema',
   $$select assert_no_soft_delete_columns()$$);

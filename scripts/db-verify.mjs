@@ -114,6 +114,13 @@ try {
     ["UPDATE a frozen forward test", `update forward_tests set declared_hypothesis = 'reworded'`],
     ["DELETE paper_trades", `delete from paper_trades`],
     ["UPDATE paper_trades entry", `update paper_trades set entry_price = 1.0`],
+    // W15-02. The log is the evidence that the human authored the strategy
+    // (CLAUDE.md §3 fact 2), so a role that could rewrite what a model returned
+    // could rewrite that evidence. `user_acted` and `resulting_version_id` are
+    // the two columns this must NOT block — they are checked in
+    // verify_invariants.sql, which can express "must be allowed".
+    ["UPDATE ai_interactions output", `update ai_interactions set output = '{"kind":"X"}'::jsonb`],
+    ["DELETE ai_interactions", `delete from ai_interactions`],
   ];
 
   class Rollback extends Error {}
@@ -139,6 +146,10 @@ try {
           values ('${F}', '${F}', 'h', 10000000, '{}'::jsonb, 60, 'RUNNING', now());
         insert into paper_trades(id, forward_test_id, symbol, side, qty, entry_price, entry_at)
           values ('${F}', '${F}', 'NSE:RELIANCE', 'BUY', 10, 2500.0000, now());
+        insert into ai_interactions(id, user_id, context_type, input_snapshot, output,
+                                    model_id, prompt_version)
+          values ('${F}', '${F}', 'HYPOTHESIS', '{}'::jsonb, '{"kind": "HYPOTHESIS"}'::jsonb,
+                  'stub-0', 'verify/1');
       `);
 
       await tx.unsafe("set local role service_role");
