@@ -29,7 +29,10 @@ export function RiskForm() {
 
   return (
     <AppShell>
-      <AppBar backHref="/choose-interests" />
+      {/* `/choose-interests` until W24 — the interests step fed a discovery
+          feed of other people's strategies and went with it (§8.5). The step
+          before this one is now the experience question. */}
+      <AppBar backHref="/onboarding-questions" />
 
       <div className="flex flex-1 flex-col px-5 pb-[calc(29px+env(safe-area-inset-bottom))]">
         <h1 className="mt-[40px] text-center text-[20px] font-semibold text-ink">
@@ -84,7 +87,11 @@ export function RiskForm() {
             });
             setPending(false);
             if (!result.ok) return setError(result.error);
-            router.push("/investor/home");
+            // `/investor/home` until W24. There is one persona now, and the
+            // trader's landing page is their strategy list — this is the last
+            // step of onboarding, so the dead route sent every new account to a
+            // 404 the moment they finished signing up.
+            router.push("/home");
             router.refresh();
           }}
         >

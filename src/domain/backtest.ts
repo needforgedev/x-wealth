@@ -36,7 +36,16 @@ import { requiredWarmUpBars, resolveDefinition, type StrategyDefinition } from "
  * engine, and no flag that would produce one (`x-wealth-product.md` §5.3).
  */
 
-export const ENGINE_VERSION = "backtest-1";
+/**
+ * Bumped when the engine can produce different numbers from the same inputs.
+ *
+ * `backtest-2` added take-profit targets and the intrabar rule (`W5-13`).
+ * Runs stored under `backtest-1` were produced by an engine that ignored
+ * `targetPercent` entirely, and the methodology on each run is what says so —
+ * which is the point of storing it. Comparing a `-1` result against a `-2`
+ * result for the same strategy is comparing two different execution models.
+ */
+export const ENGINE_VERSION = "backtest-2";
 
 export class BacktestError extends Error {}
 
@@ -53,12 +62,44 @@ export type ExecutedTrade = {
   grossPnlPaise: number;
   costs: CostsBreakdown;
   netPnlPaise: number;
+  /**
+   * What the trade risked at the moment it opened: `qty × (entry − stop)`, in
+   * paise. The denominator of the R-multiple.
+   *
+   * Recorded per trade rather than derived later because the stop is a property
+   * of the position, and a strategy whose stop percentage changed between
+   * versions would otherwise have its old trades re-expressed in units of a
+   * risk they never took.
+   */
+  riskPaise: number;
 };
 
 export type EquityPoint = { date: IsoDate; equityPaise: number };
 
+/**
+ * Below this, the sample cannot support an inference and the result says so.
+ *
+ * `CLAUDE.md` §8.12: *below ~100 trades, surface the inadequacy prominently.*
+ * Prominently, not in a footnote — a 12-trade backtest showing 71% hit rate is
+ * the single most misleading artefact this engine can produce, and it looks
+ * exactly like a good one.
+ */
+export const ADEQUATE_TRADE_COUNT = 100;
+
 export type BacktestMetrics = {
+  /**
+   * Net of every charge, and the figure that means anything.
+   *
+   * `grossReturnPercent` sits beside it — never instead of it, never behind a
+   * flag. `CLAUDE.md` §8.3: *display gross and net together so the drag is
+   * visible.* The pair is the disclosure; either one alone is not.
+   */
   netReturnPercent: number;
+  grossReturnPercent: number;
+  totalCostsPaise: number;
+  /** What the charges took, as a share of the gross result. */
+  costDragPercent: number | null;
+
   maxDrawdownPercent: number;
   hitRatePercent: number;
   avgWinPaise: number;
@@ -66,6 +107,33 @@ export type BacktestMetrics = {
   sharpe: number | null;
   tradeCount: number;
   exposurePercent: number;
+
+  /** Average net result per trade. The number that decides whether to trade. */
+  expectancyPaise: number;
+  /** The same in units of risk taken, which is how it compares across strategies. */
+  expectancyR: number | null;
+  /** Per-trade R-multiples, ascending. The shape behind the average. */
+  rMultiples: number[];
+  /** Gross winnings ÷ gross losses. Null when nothing lost — undefined, not infinite. */
+  profitFactor: number | null;
+  /** Sharpe counting only downside dispersion, since upside is not risk. */
+  sortino: number | null;
+  /** Annualised return ÷ max drawdown. Null when there was no drawdown to divide by. */
+  calmar: number | null;
+  longestLosingStreak: number;
+  /** Share of total net profit contributed by the single best trade. */
+  topTradeSharePercent: number | null;
+  /** Distinct instruments that actually traded. */
+  symbolsTraded: number;
+
+  /**
+   * Whether the trade count can support an inference at all (§8.12).
+   *
+   * Part of the metrics rather than a rendering concern, so that every consumer
+   * — the results screen, the attack report, the AI critique — reads the same
+   * verdict instead of each deciding for itself where the line sits.
+   */
+  sampleAdequate: boolean;
 };
 
 /**
@@ -83,6 +151,7 @@ export type OpenPositionAtEnd = {
   entryDate: IsoDate;
   entryPrice: PriceTicks;
   stopPrice: PriceTicks;
+  targetPrice: PriceTicks | null;
   /** Latest close seen for the instrument, for marking to market. */
   markPrice: PriceTicks;
 };
@@ -258,6 +327,9 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
           grossPnlPaise: step.closed.accounting.grossPnlPaise,
           costs: step.closed.accounting.costs,
           netPnlPaise: step.closed.accounting.netPnlPaise,
+          riskPaise:
+            positionValue(step.closed.entryPrice, step.closed.qty) -
+            positionValue(step.closed.stopPrice, step.closed.qty),
         });
       }
 
@@ -291,6 +363,7 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
       entryDate: state.position.entryDate,
       entryPrice: state.position.entryPrice,
       stopPrice: state.position.stopPrice,
+      targetPrice: state.position.targetPrice,
       markPrice: state.lastClose,
     });
   }
@@ -369,8 +442,44 @@ export function computeMetrics(input: {
   // hit rate.
   const hitRatePercent = trades.length === 0 ? 0 : percent(wins.length, trades.length);
 
+  const netTotal = trades.reduce((sum, t) => sum + t.netPnlPaise, 0);
+  const totalCostsPaise = trades.reduce((sum, t) => sum + t.costs.totalPaise, 0);
+  const grossTotal = trades.reduce((sum, t) => sum + t.grossPnlPaise, 0);
+
+  /**
+   * Gross return is the same curve without the charges, expressed against the
+   * same capital — so the gap between the two lines *is* the drag, in the units
+   * the user cares about. It is derived from the trades rather than simulated
+   * costlessly, because a genuinely cost-free run would have taken different
+   * positions (`affordableQty` funds charges out of cash) and the comparison
+   * would no longer be like for like.
+   */
+  const grossReturnPercent = percent(
+    finalEquity + totalCostsPaise - initialCapitalPaise,
+    initialCapitalPaise,
+  );
+
+  // Gross winnings over gross losses. Null rather than Infinity when nothing
+  // lost: a strategy that has never had a losing trade has an unmeasured ratio,
+  // not a perfect one, and 12 trades is exactly when that happens.
+  const wonPaise = wins.reduce((sum, t) => sum + t.netPnlPaise, 0);
+  const lostPaise = Math.abs(losses.reduce((sum, t) => sum + t.netPnlPaise, 0));
+
+  // R-multiples. A trade whose stop sat at or above its entry risked nothing
+  // measurable and is excluded rather than counted as an infinite R.
+  const rMultiples = trades
+    .filter((t) => t.riskPaise > 0)
+    .map((t) => t.netPnlPaise / t.riskPaise)
+    .sort((a, b) => a - b);
+
+  const bestTrade = trades.reduce((best, t) => Math.max(best, t.netPnlPaise), 0);
+
   return {
     netReturnPercent,
+    grossReturnPercent,
+    totalCostsPaise,
+    costDragPercent: grossTotal === 0 ? null : percent(totalCostsPaise, Math.abs(grossTotal)),
+
     maxDrawdownPercent,
     hitRatePercent,
     avgWinPaise: mean(wins.map((t) => t.netPnlPaise)),
@@ -379,7 +488,107 @@ export function computeMetrics(input: {
     tradeCount: trades.length,
     exposurePercent:
       equityCurve.length === 0 ? 0 : percent(sessionsWithExposure, equityCurve.length),
+
+    expectancyPaise: trades.length === 0 ? 0 : Math.round(netTotal / trades.length),
+    expectancyR:
+      rMultiples.length === 0
+        ? null
+        : rMultiples.reduce((sum, r) => sum + r, 0) / rMultiples.length,
+    rMultiples,
+    profitFactor: lostPaise === 0 ? null : wonPaise / lostPaise,
+    sortino: sortinoOf(equityCurve),
+    calmar: calmarOf(initialCapitalPaise, finalEquity, equityCurve.length, maxDrawdownPercent),
+    longestLosingStreak: longestLosingStreakOf(trades),
+    topTradeSharePercent: netTotal <= 0 ? null : percent(bestTrade, netTotal),
+    symbolsTraded: new Set(trades.map((t) => t.symbol)).size,
+
+    sampleAdequate: trades.length >= ADEQUATE_TRADE_COUNT,
   };
+}
+
+/**
+ * Downside deviation only, because upside dispersion is not risk.
+ *
+ * Sharpe punishes a strategy for its good months. Sortino divides by the
+ * deviation of the negative sessions alone, which is the number a trader
+ * actually experiences as pain. The two disagree most for exactly the profile
+ * this product attracts — infrequent large wins against many small losses —
+ * so reporting one without the other misrepresents that shape.
+ *
+ * Null, never zero, when there is nothing to measure: no losing session means
+ * unmeasured, not riskless.
+ */
+export function sortinoOf(equityCurve: readonly EquityPoint[]): number | null {
+  const returns = sessionReturns(equityCurve);
+  if (returns === null || returns.length < 2) return null;
+
+  const average = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+  const downside = returns.filter((r) => r < 0);
+  if (downside.length === 0) return null;
+
+  // Squared against zero rather than against the mean: the target return is
+  // zero, so a session that merely underperformed the average is not downside.
+  const deviation = Math.sqrt(downside.reduce((sum, r) => sum + r ** 2, 0) / downside.length);
+  if (deviation === 0) return null;
+
+  return (average / deviation) * Math.sqrt(SESSIONS_PER_YEAR);
+}
+
+/**
+ * Annualised return divided by the worst drawdown — return per unit of the
+ * worst thing that happened, rather than per unit of average wobble.
+ *
+ * Null when the curve never drew down. A strategy that has not yet had a bad
+ * run has no Calmar, and printing a very large number there would read as
+ * excellence rather than as absence of evidence.
+ */
+export function calmarOf(
+  initialCapitalPaise: number,
+  finalEquityPaise: number,
+  sessions: number,
+  maxDrawdownPercent: number,
+): number | null {
+  if (maxDrawdownPercent <= 0 || sessions < 2) return null;
+  if (initialCapitalPaise <= 0 || finalEquityPaise <= 0) return null;
+
+  const years = sessions / SESSIONS_PER_YEAR;
+  const cagr = ((finalEquityPaise / initialCapitalPaise) ** (1 / years) - 1) * 100;
+  return cagr / maxDrawdownPercent;
+}
+
+/**
+ * The longest run of consecutive losing trades.
+ *
+ * In the ledger's order, which is the order they were lived through. The primer
+ * treats this as the number that decides whether a strategy is followable at
+ * all: an edge nobody can sit through is not an edge they will realise.
+ * Breakeven trades neither extend a streak nor break one — they are not losses.
+ */
+export function longestLosingStreakOf(trades: readonly ExecutedTrade[]): number {
+  let longest = 0;
+  let current = 0;
+  for (const trade of trades) {
+    if (trade.netPnlPaise < 0) {
+      current++;
+      if (current > longest) longest = current;
+    } else if (trade.netPnlPaise > 0) {
+      current = 0;
+    }
+  }
+  return longest;
+}
+
+/** Session-over-session returns, or null if the curve cannot support them. */
+function sessionReturns(equityCurve: readonly EquityPoint[]): number[] | null {
+  if (equityCurve.length < 3) return null;
+
+  const returns: number[] = [];
+  for (let i = 1; i < equityCurve.length; i++) {
+    const previous = equityCurve[i - 1].equityPaise;
+    if (previous <= 0) return null;
+    returns.push((equityCurve[i].equityPaise - previous) / previous);
+  }
+  return returns;
 }
 
 /**
@@ -395,15 +604,8 @@ export function computeMetrics(input: {
  * those would read as "measured, and it was poor" instead of "not measurable".
  */
 export function sharpeOf(equityCurve: readonly EquityPoint[]): number | null {
-  if (equityCurve.length < 3) return null;
-
-  const returns: number[] = [];
-  for (let i = 1; i < equityCurve.length; i++) {
-    const previous = equityCurve[i - 1].equityPaise;
-    if (previous <= 0) return null;
-    returns.push((equityCurve[i].equityPaise - previous) / previous);
-  }
-  if (returns.length < 2) return null;
+  const returns = sessionReturns(equityCurve);
+  if (returns === null || returns.length < 2) return null;
 
   const average = returns.reduce((sum, r) => sum + r, 0) / returns.length;
   const variance =

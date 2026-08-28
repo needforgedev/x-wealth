@@ -23,7 +23,7 @@ import { config } from "dotenv";
 import postgres from "postgres";
 
 import { priceToString } from "@/domain/money";
-import { assertValidSeries } from "@/domain/market-data";
+import { assertAdjustmentHolds, assertValidSeries } from "@/domain/market-data";
 import { PLACEHOLDER_CALENDAR_2026 } from "@/domain/session";
 import { UNIVERSE, type UniverseEntry } from "@/server/market-data/universe";
 import {
@@ -179,6 +179,14 @@ try {
       // corrupt row too, but they cannot say *which* rule a series broke, and
       // ordering and duplicates are not expressible as a row constraint at all.
       assertValidSeries(bars, PLACEHOLDER_CALENDAR_2026);
+
+      // W5-05: assert the adjustment rather than trust it. Upstox says its
+      // daily series is corporate-action adjusted and the RELIANCE 1:1 bonus
+      // was verified by hand, but a vendor that silently changes that for one
+      // instrument would otherwise write a −50% session straight into the
+      // engine, where it reads as a price collapse and fires every stop.
+      // Ingestion is the right place to refuse it: bad bars never land.
+      assertAdjustmentHolds(entry.symbol, bars, UPSTOX_DAILY_ADJUSTMENT);
 
       const rows = bars.map((bar) => ({
         symbol: entry.symbol,

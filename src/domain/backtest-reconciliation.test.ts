@@ -282,3 +282,133 @@ describe("G4 — twenty trades, two independent implementations", () => {
     expect(metrics.hitRatePercent).toBeCloseTo((winners / 20) * 100, 10);
   });
 });
+
+/**
+ * The same gate, applied to the take-profit path (W5-15, W5-13).
+ *
+ * The twenty trades above were designed before the engine honoured
+ * `targetPercent`, so every one of them exits on a rule or a stop. That is
+ * exactly the coverage gap that let the target go unimplemented for a fortnight
+ * while the CHECK constraint, the validator and the type all insisted it
+ * existed — the reconciliation gate could not see a code path nothing exercised.
+ *
+ * So the target gets the same treatment: hand-calculated fills, an independent
+ * replay, and one designed ambiguous bar where the pessimistic rule is the only
+ * thing that decides the answer.
+ */
+const TARGET_RULES: StrategyDefinitionV2 = {
+  ...RULES,
+  // Exit rule set out of reach, so a close can only come from the stop or the
+  // target. Nothing here is decided by the rule the previous fixture leans on.
+  exit: { left: { kind: "PRICE" }, comparator: "ABOVE", right: { kind: "CONSTANT", value: 9999 } },
+  targetPercent: 10,
+  stopLossPercent: 5,
+};
+
+/**
+ * Entry ₹100 → stop ₹95, target ₹110.
+ *
+ * Bar A closes at 95 → entry signal. Bar B opens at 100 → the fill, and its
+ * range 96–106 touches neither level. Bar C reaches 112, clearing the target.
+ */
+const TARGET_HIT: OhlcRow[] = [
+  { open: "98", high: "99", low: "94", close: "95" },
+  { open: "100", high: "106", low: "96", close: "105" },
+  { open: "106", high: "112", low: "105", close: "108" },
+  { open: "108", high: "109", low: "107", close: "108" },
+];
+
+/**
+ * The ambiguous bar, designed so that the two readings give opposite signs.
+ *
+ * Bar C runs 94–112: it reaches the ₹95 stop *and* the ₹110 target. Read
+ * optimistically it is a +10% winner; read pessimistically it is a −5% loser.
+ * Nothing in the bar says which happened, and §7.6 says we take the loss.
+ */
+const AMBIGUOUS: OhlcRow[] = [
+  { open: "98", high: "99", low: "94", close: "95" },
+  { open: "100", high: "106", low: "96", close: "105" },
+  { open: "105", high: "112", low: "94", close: "108" },
+  { open: "108", high: "109", low: "107", close: "108" },
+];
+
+describe("G4 — the take-profit path, worked out by hand", () => {
+  const runRows = (rows: OhlcRow[]) =>
+    runBacktest({
+      definition: TARGET_RULES,
+      series: { "NSE:TEST": ohlcBars({ from: "2026-01-05", rows }) },
+      costModel: MODEL,
+    });
+
+  it("fills the target at the target price, to the paisa", () => {
+    const { trades } = runRows(TARGET_HIT);
+
+    expect(trades).toHaveLength(1);
+    const trade = trades[0];
+
+    expect(trade.exitReason).toBe("TARGET");
+    expect(trade.entryPrice).toBe(priceFromString("100"));
+    expect(trade.exitPrice).toBe(priceFromString("110"));
+
+    /**
+     * Worked the long way, sharing nothing with the engine.
+     *
+     *   a unit costs positionValue(₹100, 1) = 10,000 paise
+     *   qty is the largest whose value plus buy charges fits ₹1,00,000
+     *   gross = qty × (₹110 − ₹100), and net subtracts both legs' charges
+     */
+    const buy = priceFromString("100");
+    const sell = priceFromString("110");
+    const unitValue = positionValue(buy, 1);
+
+    let qty = Math.floor(CAPITAL_PAISE / unitValue);
+    while (
+      qty > 0 &&
+      positionValue(buy, qty) + chargesForLeg(MODEL, { side: "BUY", price: buy, qty }).totalPaise >
+        CAPITAL_PAISE
+    ) {
+      qty--;
+    }
+
+    const buyCharges = chargesForLeg(MODEL, { side: "BUY", price: buy, qty }).totalPaise;
+    const sellCharges = chargesForLeg(MODEL, { side: "SELL", price: sell, qty }).totalPaise;
+    const gross = positionValue(sell, qty) - positionValue(buy, qty);
+
+    expect(trade.qty).toBe(qty);
+    expect(trade.grossPnlPaise).toBe(gross);
+    expect(trade.netPnlPaise).toBe(gross - buyCharges - sellCharges);
+  });
+
+  it("records the risk the trade took, so R is not reconstructed later", () => {
+    const { trades } = runRows(TARGET_HIT);
+    const trade = trades[0];
+
+    // Stop is 5% below a ₹100 entry, so each unit risked ₹5.
+    const expectedRisk =
+      positionValue(priceFromString("100"), trade.qty) -
+      positionValue(priceFromString("95"), trade.qty);
+
+    expect(trade.riskPaise).toBe(expectedRisk);
+    // Target ₹10 against risk ₹5 — a 2R winner before charges, slightly under after.
+    expect(trade.netPnlPaise / trade.riskPaise).toBeGreaterThan(1.9);
+    expect(trade.netPnlPaise / trade.riskPaise).toBeLessThan(2);
+  });
+
+  it("resolves the ambiguous bar as a loss, not a win", () => {
+    const { trades } = runRows(AMBIGUOUS);
+
+    expect(trades).toHaveLength(1);
+    const trade = trades[0];
+
+    // The optimistic reading of this identical bar is a +₹10/unit win. The
+    // difference between the two readings is the whole of W5-13.
+    expect(trade.exitReason).toBe("STOP_LOSS");
+    expect(trade.exitPrice).toBe(priceFromString("95"));
+    expect(trade.netPnlPaise).toBeLessThan(0);
+
+    const optimistic =
+      positionValue(priceFromString("110"), trade.qty) -
+      positionValue(priceFromString("100"), trade.qty);
+    expect(trade.grossPnlPaise).not.toBe(optimistic);
+  });
+});

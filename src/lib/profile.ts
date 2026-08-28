@@ -1,9 +1,10 @@
-export const USER = {
-  name: "Raj Bansal",
-  since: "Member since 2021",
-  email: "rajbansal@gmail.com",
-  bio: "Hello There! We're glad to have you on board. Here's a quick start list for you to get started",
-} as const;
+/**
+ * `USER` stood here — a hardcoded "Raj Bansal / rajbansal@gmail.com / Member
+ * since 2021" that `/profile` and `/profile/edit` rendered to whoever was
+ * signed in. Removed: the screens take the real `users` row now. A profile
+ * showing somebody else's name is worse than a broken link, because nothing
+ * about it looks broken.
+ */
 
 export type SettingsItem = {
   href: string;
@@ -11,40 +12,30 @@ export type SettingsItem = {
   icon: { src: string; width: number; height: number };
 };
 
+/**
+ * "Change Password" stood here, pointing at a form for a credential this
+ * product does not have — sign-in is phone OTP end to end, and there is no
+ * password anywhere in `auth.ts` to change. The row and the page it led to are
+ * both gone. A settings entry that opens a working-looking form which can never
+ * do anything is a worse defect than a dead link, because the user believes it
+ * worked.
+ */
 export const SETTINGS: ReadonlyArray<SettingsItem> = [
   {
     href: "/profile/edit",
     label: "Account Details",
     icon: { src: "/assets/icon-person.svg", width: 24, height: 24 },
   },
-  {
-    href: "/profile/password",
-    label: "Change Password",
-    icon: { src: "/assets/icon-lock.svg", width: 24, height: 24 },
-  },
-  {
-    href: "/profile/favourites",
-    label: "Get Support",
-    icon: { src: "/assets/icon-live-help.svg", width: 24, height: 24 },
-  },
 ];
 
-export type FavouriteStock = {
-  id: string;
-  ticker: string;
-  name: string;
-  price: string;
-  change: string;
-  direction: "up" | "down";
-  logo: string;
-  logoWidth: number;
-  logoHeight: number;
-};
-
-export const FAVOURITE_STOCKS: FavouriteStock[] = [
-  { id: "tata", ticker: "TATA", name: "Tata Steel", price: "$234.00", change: "124%", direction: "up", logo: "/assets/logo-tata.png", logoWidth: 31, logoHeight: 19 },
-  { id: "paytm", ticker: "PAYTM", name: "PayTM", price: "$234.00", change: "124%", direction: "up", logo: "/assets/logo-paytm.png", logoWidth: 33, logoHeight: 25 },
-  { id: "nyka", ticker: "NYKA", name: "NYKAA", price: "$234.00", change: "124%", direction: "up", logo: "/assets/logo-nykaa.png", logoWidth: 34, logoHeight: 11 },
-  { id: "tcs", ticker: "TCS", name: "Netflix", price: "$234.00", change: "124%", direction: "down", logo: "/assets/logo-netflix.png", logoWidth: 24, logoHeight: 22 },
-  { id: "info", ticker: "INFO", name: "Twitter", price: "$234.00", change: "124%", direction: "up", logo: "/assets/logo-twitter.png", logoWidth: 18, logoHeight: 18 },
-];
+/*
+ * `FavouriteStock` and `FAVOURITE_STOCKS` stood here: five stocks quoting
+ * "$234.00" and "124%" gains against real company logos. They fed
+ * `/profile/favourites`, deleted with the distribution surface in W10-15, so
+ * nothing has imported them since.
+ *
+ * They would have to go regardless. `CLAUDE.md` §10 forbids seed data and demo
+ * content, and §8.7 forbids platform-authored performance figures — a fabricated
+ * 124% gain shown beside a real ticker is both. The performance-claims lint rule
+ * cannot see it, because it reads words and this was numbers.
+ */

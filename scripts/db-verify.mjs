@@ -121,6 +121,10 @@ try {
     // verify_invariants.sql, which can express "must be allowed".
     ["UPDATE ai_interactions output", `update ai_interactions set output = '{"kind":"X"}'::jsonb`],
     ["DELETE ai_interactions", `delete from ai_interactions`],
+    // W18-07. A report saying a backtest should not be believed is the record
+    // most worth removing, so a role that could soften one could soften that.
+    ["UPDATE adversarial_reports findings", `update adversarial_reports set findings = '[]'::jsonb`],
+    ["DELETE adversarial_reports", `delete from adversarial_reports`],
   ];
 
   class Rollback extends Error {}
@@ -150,6 +154,10 @@ try {
                                     model_id, prompt_version)
           values ('${F}', '${F}', 'HYPOTHESIS', '{}'::jsonb, '{"kind": "HYPOTHESIS"}'::jsonb,
                   'stub-0', 'verify/1');
+        insert into adversarial_reports(id, backtest_run_id, suite_version, seed,
+                                        findings, severity_ranking, attacks_run, attacks_skipped)
+          values ('${F}', '${F}', 'adversarial-1', 1, '[]'::jsonb, '[]'::jsonb,
+                  '["SAMPLE_SIZE"]'::jsonb, '[]'::jsonb);
       `);
 
       await tx.unsafe("set local role service_role");

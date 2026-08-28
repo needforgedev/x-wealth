@@ -215,6 +215,108 @@ export function assertValidSeries(bars: readonly Bar[], calendar: TradingCalenda
 }
 
 // ---------------------------------------------------------------------------
+// Corporate actions (W5-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * A close-to-close move beyond this is treated as an unadjusted corporate
+ * action rather than as a price move.
+ *
+ * The threshold is not a guess. NSE applies price bands of 2%, 5%, 10% or 20%
+ * to cash equities, and securities in the F&O segment sit under a 10% dynamic
+ * band that widens in steps rather than releasing outright. A single session
+ * that moves a listed equity by more than 30% close-to-close is therefore not
+ * something the exchange permits the *price* to do — it is a split, a bonus or
+ * a consolidation showing through an unadjusted series.
+ *
+ * Set well above the widest band rather than at it, because a band applies to
+ * the previous close and a stock can legitimately gap to its limit and be
+ * revised. The point is to catch a 1:1 bonus, which halves the quoted price, not
+ * to police volatility.
+ */
+export const CORPORATE_ACTION_JUMP_PERCENT = 30;
+
+export type PriceJump = {
+  date: IsoDate;
+  previousClose: PriceTicks;
+  close: PriceTicks;
+  movePercent: number;
+};
+
+/**
+ * Sessions where the price moved further than the exchange would have allowed.
+ *
+ * `CLAUDE.md` §7.6 requires corporate-action-adjusted data, and the vendor says
+ * its series is adjusted — `SourceMetadata.adjustment`. This is the check that
+ * the claim is true, which is a different thing from the claim.
+ *
+ * It matters because an unadjusted bonus is not a data error that announces
+ * itself. A 1:1 bonus halves the quoted price overnight, the engine reads a
+ * −50% session, every stop in the strategy fires, and the backtest reports a
+ * catastrophe that never happened — with no error anywhere and a perfectly
+ * ordinary-looking equity curve.
+ *
+ * Deliberately reported rather than thrown here: the caller knows whether it
+ * holds a series that *claims* to be adjusted, and that is what decides whether
+ * a jump is a defect or an expected feature of raw data.
+ */
+export function corporateActionJumps(
+  bars: readonly Bar[],
+  thresholdPercent: number = CORPORATE_ACTION_JUMP_PERCENT,
+): PriceJump[] {
+  const jumps: PriceJump[] = [];
+
+  for (let i = 1; i < bars.length; i++) {
+    const previousClose = bars[i - 1].close as number;
+    if (previousClose <= 0) continue;
+
+    const close = bars[i].close as number;
+    const movePercent = ((close - previousClose) / previousClose) * 100;
+
+    if (Math.abs(movePercent) > thresholdPercent) {
+      jumps.push({
+        date: bars[i].date,
+        previousClose: bars[i - 1].close,
+        close: bars[i].close,
+        movePercent,
+      });
+    }
+  }
+
+  return jumps;
+}
+
+/**
+ * Refuse a series that claims to be adjusted and demonstrably is not.
+ *
+ * `W5-05`: *assert it rather than trust it.* An `UNADJUSTED` series passes
+ * untouched — using one is permitted provided the run says so, and the run does
+ * say so, in `methodology.data.adjustment`.
+ */
+export function assertAdjustmentHolds(
+  symbol: string,
+  bars: readonly Bar[],
+  adjustment: PriceAdjustment,
+): void {
+  if (adjustment !== "ADJUSTED") return;
+
+  const jumps = corporateActionJumps(bars);
+  if (jumps.length === 0) return;
+
+  const detail = jumps
+    .slice(0, 5)
+    .map((j) => `${j.date} ${j.movePercent.toFixed(1)}%`)
+    .join(", ");
+
+  throw new MarketDataError(
+    `${symbol}: series is declared ADJUSTED but contains ${jumps.length} session(s) that moved ` +
+      `further than an exchange price band permits (${detail}). That is the signature of an ` +
+      `unadjusted split, bonus or consolidation. A backtest on this series would read the ` +
+      `corporate action as a price collapse and fire every stop in the strategy.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Reading a series
 // ---------------------------------------------------------------------------
 

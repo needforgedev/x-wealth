@@ -37,11 +37,23 @@ const { liveEndOfDaySource } = await import("@/server/market-data/db-store");
 const { replayForwardTest } = await import("@/server/forward-test/replay");
 const { ZERO_BROKERAGE, nseEquityDelivery } = await import("@/domain/costs");
 const { starterDefinition } = await import("@/domain/strategy");
+type StrategyDefinitionV2 = import("@/domain/strategy").StrategyDefinitionV2;
 const { formatPaise, formatPrice, positionValue } = await import("@/domain/money");
 
-const definition = {
+/**
+ * Note the shape. `starterDefinition()` returns a **V2** definition, where the
+ * instrument list lives under `universe`. This script previously spread a
+ * top-level `instruments` key over it — the V1 shape — which V2's
+ * `resolveDefinition` does not read, so the universe resolved to empty, the
+ * replay found no sessions, and the script died with `WINDOW_NOT_OPEN`.
+ *
+ * It broke when the definition moved to V2 (`W4-08`, 27 Aug 2026) and was
+ * invisible because the value was passed on with `as never`, which switches off
+ * exactly the check that would have caught it. The cast is gone.
+ */
+const definition: StrategyDefinitionV2 = {
   ...starterDefinition(),
-  instruments: ["NSE:RELIANCE", "NSE:TCS"],
+  universe: { instruments: ["NSE:RELIANCE", "NSE:TCS"], minAvgTurnoverPaise: null },
 };
 const costModel = nseEquityDelivery({ brokerage: ZERO_BROKERAGE, slippagePercent: 0.05 });
 
@@ -65,7 +77,7 @@ const progress = await replayForwardTest({
   plannedSessions: PLANNED_SESSIONS,
   initialCapitalPaise: definition.initialCapitalPaise,
   costModel,
-  definition: definition as never,
+  definition,
   source: await liveEndOfDaySource(),
 });
 

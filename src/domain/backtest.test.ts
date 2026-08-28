@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { runBacktest, sharpeOf, BacktestError, type BacktestInput } from "./backtest";
+import {
+  ADEQUATE_TRADE_COUNT,
+  BacktestError,
+  calmarOf,
+  longestLosingStreakOf,
+  runBacktest,
+  sharpeOf,
+  sortinoOf,
+  type BacktestInput,
+} from "./backtest";
 import { ZERO_BROKERAGE, nseEquityDelivery, type CostModel } from "./costs";
-import { ohlcBars, type OhlcRow } from "./market-data-fixture";
+import { fixtureSource, ohlcBars, type OhlcRow } from "./market-data-fixture";
+import { buildMethodology } from "./methodology";
 import { priceFromString } from "./money";
 import { starterDefinition, type StrategyDefinitionV2 } from "./strategy";
 
@@ -229,6 +239,164 @@ describe("stop-loss", () => {
  * to see at decision time, run again, and assert nothing changed. If a future
  * bar can move a past decision, the engine is peeking.
  */
+describe("take-profit target (W5-15)", () => {
+  /**
+   * `targetPercent` was carried by the definition, validated, and required as a
+   * key by the `0012` CHECK for a fortnight while the engine never read it. A
+   * strategy could declare "take profit at 10%" and be backtested as though it
+   * had declared nothing — a result describing rules nobody wrote. These are
+   * the assertions that would have caught it.
+   */
+  const withTarget = (targetPercent: number) => ({
+    ...priceRules(95, 999), // exit rule never fires; only stop and target can close
+    targetPercent,
+  });
+
+  it("exits at the target when a later bar trades through it", () => {
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" }, // entry signal
+      { open: "100", high: "104", low: "99", close: "103" }, // entry at 100, no level hit
+      { open: "104", high: "115", low: "103", close: "114" }, // high reaches 110
+      { open: "114", high: "116", low: "113", close: "115" },
+    ];
+
+    const { trades } = run(withTarget(10), rows);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].exitReason).toBe("TARGET");
+    // Filled at the target itself, not at the high the bar happened to reach.
+    expect(trades[0].exitPrice).toBe(priceFromString("110"));
+  });
+
+  it("fills at the open when the market gaps above the target", () => {
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100", high: "104", low: "99", close: "103" }, // entry at 100
+      { open: "125", high: "130", low: "124", close: "129" }, // gapped past 110
+    ];
+
+    const { trades } = run(withTarget(10), rows);
+
+    expect(trades[0].exitReason).toBe("TARGET");
+    // The favourable gap is as real as the unfavourable one. Refusing to model
+    // it while modelling the gap-down would be a thumb on the scale.
+    expect(trades[0].exitPrice).toBe(priceFromString("125"));
+  });
+
+  it("can reach the target on the same bar the position opened", () => {
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100", high: "112", low: "99.5", close: "111" }, // entry and target, one bar
+      { open: "111", high: "112", low: "110", close: "111" },
+    ];
+
+    const { trades } = run(withTarget(10), rows);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].entryDate).toBe(trades[0].exitDate);
+    expect(trades[0].exitReason).toBe("TARGET");
+  });
+
+  it("rounds the target up, never into the strategy's favour", () => {
+    // Entry 100.005 → a 1% target is 101.00505, which is not on a tick. Rounded
+    // up to 101.0051, so a bar reaching exactly 101.005 must NOT fill.
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100.005", high: "101.005", low: "99", close: "100.5" },
+      { open: "100.5", high: "100.6", low: "100.4", close: "100.5" },
+    ];
+
+    const { trades } = run(withTarget(1), rows);
+
+    expect(trades.filter((t) => t.exitReason === "TARGET")).toHaveLength(0);
+  });
+
+  it("never produces a target exit when the strategy declares none", () => {
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100", high: "500", low: "99", close: "480" }, // would clear any target
+      { open: "480", high: "490", low: "470", close: "485" },
+    ];
+
+    const { trades } = run({ ...priceRules(95, 999), targetPercent: null }, rows);
+
+    expect(trades.every((t) => t.exitReason !== "TARGET")).toBe(true);
+  });
+});
+
+describe("the intrabar problem (W5-13)", () => {
+  /**
+   * `CLAUDE.md` §7.6 calls this the biggest source of false results in a
+   * backtest, and it is the only assumption in the engine that can invert a
+   * verdict while every number on screen still looks ordinary.
+   *
+   * A daily bar that reaches both levels does not say which came first. The
+   * engine takes the stop, always. These tests exist to stop that quietly
+   * becoming "whichever branch was evaluated first".
+   */
+  const bothLevels = { ...priceRules(95, 999), targetPercent: 10 };
+
+  it("takes the stop when one bar reaches both levels", () => {
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100", high: "104", low: "99", close: "103" }, // entry at 100
+      // stop 90, target 110, and this bar reaches both.
+      { open: "103", high: "115", low: "85", close: "112" },
+      { open: "112", high: "113", low: "111", close: "112" },
+    ];
+
+    const { trades } = run(bothLevels, rows);
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0].exitReason).toBe("STOP_LOSS");
+    expect(trades[0].exitPrice).toBe(priceFromString("90"));
+    // And it must be a loss. The optimistic reading of this same bar is a +10%
+    // win, which is the whole reason the rule exists.
+    expect(trades[0].netPnlPaise).toBeLessThan(0);
+  });
+
+  it("takes the stop when both levels are reached on the entry bar itself", () => {
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100", high: "115", low: "85", close: "112" }, // entry, then both
+      { open: "112", high: "113", low: "111", close: "112" },
+    ];
+
+    const { trades } = run(bothLevels, rows);
+
+    expect(trades[0].exitReason).toBe("STOP_LOSS");
+    expect(trades[0].entryDate).toBe(trades[0].exitDate);
+  });
+
+  it("is not sensitive to which level sits nearer the open", () => {
+    // Same ambiguity, target much closer to the open than the stop. If the
+    // resolution were distance-based or first-match-wins, this would flip.
+    const rows: OhlcRow[] = [
+      { open: "100", high: "101", low: "99", close: "90" },
+      { open: "100", high: "104", low: "99", close: "103" },
+      { open: "103", high: "160", low: "89.9", close: "150" },
+      { open: "150", high: "151", low: "149", close: "150" },
+    ];
+
+    const { trades } = run(bothLevels, rows);
+
+    expect(trades[0].exitReason).toBe("STOP_LOSS");
+  });
+
+  it("records the fill model it used", () => {
+    // A run whose numbers depend on this assumption has to say so, or a reader
+    // cannot tell two runs apart (CLAUDE.md 7.6).
+    const methodology = buildMethodology({
+      source: fixtureSource({ series: {} }).metadata,
+      costModel: FREE,
+      warmUpBars: 0,
+    });
+
+    expect(methodology.execution.fillModel).toBe("STOP_FIRST_WHEN_AMBIGUOUS");
+    expect(methodology.execution.intrabar).toMatch(/STOP filled first/);
+  });
+});
+
 describe("no lookahead", () => {
   const base: OhlcRow[] = [
     { open: "100", high: "101", low: "99", close: "90" },
@@ -429,6 +597,112 @@ describe("metrics", () => {
     const sharpe = sharpeOf(curve);
     expect(sharpe).not.toBeNull();
     expect(sharpe!).toBeGreaterThan(0);
+  });
+});
+
+describe("the fuller metric set (W5-07)", () => {
+  /**
+   * `CLAUDE.md` §8.12 and the primer's Part 11. Return and hit rate describe
+   * how a strategy did; these describe whether it can be relied on to do it
+   * again, which is a different question and the one the adversarial suite
+   * (W18) is built to interrogate.
+   */
+  const trending = (): OhlcRow[] => {
+    const rows: OhlcRow[] = [];
+    for (let i = 0; i < 60; i++) {
+      const base = 100 + ((i * 5) % 17) - ((i * 2) % 7);
+      const close = base + ((i % 4) - 1);
+      rows.push({
+        open: base.toFixed(2),
+        high: (Math.max(base, close) + 3).toFixed(2),
+        low: (Math.min(base, close) - 3).toFixed(2),
+        close: close.toFixed(2),
+      });
+    }
+    return rows;
+  };
+
+  const withLevels = { ...priceRules(103, 999), targetPercent: 5, stopLossPercent: 3 };
+
+  it("expresses each trade in units of what it risked", () => {
+    const { trades, metrics } = run(withLevels, trending());
+
+    expect(trades.length).toBeGreaterThan(3);
+    expect(metrics.rMultiples).toHaveLength(trades.length);
+    // Ascending, because the distribution is the point — the shape of the tail
+    // is what a mean hides.
+    expect([...metrics.rMultiples].sort((a, b) => a - b)).toEqual(metrics.rMultiples);
+
+    // R is net result over risk taken, and risk is qty x (entry - stop).
+    const first = trades[0];
+    expect(first.riskPaise).toBeGreaterThan(0);
+    expect(metrics.rMultiples).toContain(first.netPnlPaise / first.riskPaise);
+  });
+
+  it("reports gross and net together, never one alone (§8.3)", () => {
+    const { metrics } = run(withLevels, trending(), { costModel: nseEquityDelivery({ brokerage: { type: "PERCENT", value: 0.03, capPaise: 2_000_00 }, slippagePercent: 0.05 }) });
+
+    // The pair is the disclosure. Charges are real, so the two must differ and
+    // gross must be the larger — that gap is what §8.3 exists to make visible.
+    expect(metrics.totalCostsPaise).toBeGreaterThan(0);
+    expect(metrics.grossReturnPercent).toBeGreaterThan(metrics.netReturnPercent);
+    expect(metrics.costDragPercent).not.toBeNull();
+  });
+
+  it("counts the longest run of consecutive losses", () => {
+    expect(longestLosingStreakOf([])).toBe(0);
+
+    const trade = (netPnlPaise: number) => ({ netPnlPaise }) as never;
+    expect(longestLosingStreakOf([trade(-1), trade(-1), trade(5), trade(-1)])).toBe(2);
+
+    // A breakeven trade neither extends a streak nor breaks it — it is not a loss.
+    expect(longestLosingStreakOf([trade(-1), trade(0), trade(-1)])).toBe(2);
+  });
+
+  it("reports absence of evidence as null, not as a good number", () => {
+    // A strategy that never fires: no losing trade, no drawdown, no dispersion.
+    const flat: OhlcRow[] = Array.from({ length: 20 }, () => ({
+      open: "100", high: "100.5", low: "99.5", close: "100",
+    }));
+    const { metrics } = run({ ...priceRules(1, 999), targetPercent: 5 }, flat);
+
+    expect(metrics.tradeCount).toBe(0);
+    // Each of these would be tempting to report as 0, and each would read as
+    // "measured, and it was fine" rather than "there was nothing to measure".
+    expect(metrics.profitFactor).toBeNull();
+    expect(metrics.expectancyR).toBeNull();
+    expect(metrics.calmar).toBeNull();
+    expect(metrics.sortino).toBeNull();
+    expect(metrics.topTradeSharePercent).toBeNull();
+  });
+
+  it("marks a small sample inadequate (§8.12)", () => {
+    const { metrics } = run(withLevels, trending());
+
+    // The most misleading artefact this engine can produce is a short backtest
+    // with a flattering hit rate, and it looks exactly like a good one.
+    expect(metrics.tradeCount).toBeLessThan(ADEQUATE_TRADE_COUNT);
+    expect(metrics.sampleAdequate).toBe(false);
+  });
+
+  it("does not divide by a drawdown that never happened", () => {
+    expect(calmarOf(10_000_000, 12_000_000, 252, 0)).toBeNull();
+    // And computes an ordinary one: +20% over exactly a year against a 10% fall.
+    expect(calmarOf(10_000_000, 12_000_000, 252, 10)).toBeCloseTo(2, 5);
+  });
+
+  it("ignores upside dispersion when measuring downside risk", () => {
+    // Two curves, same mean drift; one has a violent up-session, the other is
+    // smooth. Sharpe punishes the first for its good day. Sortino must not.
+    const curve = (values: number[]) =>
+      values.map((equityPaise, i) => ({ date: `2026-01-${String(i + 1).padStart(2, "0")}` as never, equityPaise }));
+
+    const smooth = curve([100, 101, 102, 103, 104, 105]);
+    const spiky = curve([100, 99, 98, 97, 96, 130]);
+
+    expect(sortinoOf(smooth)).toBeNull(); // no losing session to measure
+    expect(sortinoOf(spiky)).not.toBeNull();
+    expect(sharpeOf(spiky)).not.toBeNull();
   });
 });
 

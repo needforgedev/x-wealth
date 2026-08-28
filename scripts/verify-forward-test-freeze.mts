@@ -125,9 +125,14 @@ let refused = 0;
 let allowed = 0;
 
 try {
-  const [advisor] = await sql`select id from advisors limit 1`;
-  if (!advisor) {
-    console.error("No advisor rows — cannot build a forward test to attack.");
+  // `users`, not `advisors`. The two-persona tables were collapsed into one in
+  // migration 0010 (W24), and this script kept naming the old one — so it has
+  // been dying on setup, before landing a single attack, since 27 Aug 2026.
+  // Nothing caught it because CI runs typecheck, lint, tests, build and
+  // `verify_invariants.sql`, and none of the four `verify-*` scripts.
+  const [user] = await sql`select id from users limit 1`;
+  if (!user) {
+    console.error("No user rows — cannot build a forward test to attack.");
     process.exit(1);
   }
 
@@ -135,16 +140,35 @@ try {
     .begin(async (tx) => {
       // --- a RUNNING forward test with one open and one closed trade --------
       const [strategy] = await tx`
-        insert into strategies (advisor_id, name, segment, timeframe)
-        values (${advisor.id}, 'freeze verification', 'EQUITY', '1d') returning id`;
+        insert into strategies (user_id, name, segment, timeframe)
+        values (${user.id}, 'freeze verification', 'EQUITY', '1d') returning id`;
 
-      const definition = JSON.stringify({ version: 1, instruments: ["NSE:RELIANCE"] });
+      /**
+       * `sql.json`, not `JSON.stringify`.
+       *
+       * postgres.js binds a JS string as text, so `${JSON.stringify(obj)}::jsonb`
+       * casts a *string* into jsonb and stores a jsonb string — `"{\"version\":1}"`
+       * rather than `{"version": 1}`. That was harmless until `0011` added
+       * `strategy_versions_definition_complete`, whose first test is
+       * `jsonb_typeof(definition) = 'object'`. It fails, correctly, and the
+       * constraint is the only reason anyone found out.
+       */
+      const definition = sql.json({
+        version: 1,
+        instruments: ["NSE:RELIANCE"],
+        timeframe: "1d",
+        entry: { left: { kind: "PRICE" }, comparator: "ABOVE", right: { kind: "CONSTANT", value: 1 } },
+        exit: { left: { kind: "PRICE" }, comparator: "BELOW", right: { kind: "CONSTANT", value: 1 } },
+        stopLossPercent: 5,
+        positionSizePercent: 25,
+        initialCapitalPaise: 10_000_000,
+      });
       const [v1] = await tx`
         insert into strategy_versions (strategy_id, version_no, definition)
-        values (${strategy.id}, 1, ${definition}::jsonb) returning id`;
+        values (${strategy.id}, 1, ${definition}) returning id`;
       const [v2] = await tx`
         insert into strategy_versions (strategy_id, version_no, definition)
-        values (${strategy.id}, 2, ${definition}::jsonb) returning id`;
+        values (${strategy.id}, 2, ${definition}) returning id`;
 
       const [test] = await tx`
         insert into forward_tests

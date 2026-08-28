@@ -217,6 +217,39 @@ SELECT pg_temp.must_allow('a post-mortem of its own forward test',
   $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,forward_test_id)
     values ('a0000000-0000-0000-0000-0000000000ff','POST_MORTEM','{}'::jsonb,'{"kind":"POST_MORTEM"}'::jsonb,'stub-0','verify/1','f0000000-0000-0000-0000-0000000000ff')$$);
 
+\echo '--- adversarial_reports: a report cannot be softened (7.7, 8.7) ---'
+-- W18-07. The report saying a backtest should not be believed is exactly the
+-- record someone would want to edit, so nothing about it may change once
+-- written — no permitted mutation at all, unlike ai_interactions.
+INSERT INTO adversarial_reports(id, backtest_run_id, suite_version, seed,
+                                findings, severity_ranking, attacks_run, attacks_skipped) VALUES
+  ('d0000000-0000-0000-0000-0000000000ff', 'b0000000-0000-0000-0000-0000000000ff',
+   'adversarial-1', 20260828,
+   '[{"attack":"SAMPLE_SIZE","severity":"HIGH","observation":"7 closed trades","evidence":{"tradeCount":7}}]'::jsonb,
+   '[{"attack":"SAMPLE_SIZE","severity":"HIGH"}]'::jsonb,
+   '["SAMPLE_SIZE"]'::jsonb, '[]'::jsonb);
+
+SELECT pg_temp.must_reject('soften a finding after the fact',
+  $$update adversarial_reports set findings='[]'::jsonb where id='d0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('downgrade the severity ranking',
+  $$update adversarial_reports set severity_ranking='[{"attack":"SAMPLE_SIZE","severity":"LOW"}]'::jsonb where id='d0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('re-attribute a report to a different suite version',
+  $$update adversarial_reports set suite_version='adversarial-9' where id='d0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('DELETE an attack report',
+  $$delete from adversarial_reports where id='d0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('a second report for the same run, suite and seed',
+  $$insert into adversarial_reports(backtest_run_id,suite_version,seed,findings,severity_ranking,attacks_run,attacks_skipped)
+    values ('b0000000-0000-0000-0000-0000000000ff','adversarial-1',20260828,'[]'::jsonb,'[]'::jsonb,'["SAMPLE_SIZE"]'::jsonb,'[]'::jsonb)$$);
+SELECT pg_temp.must_reject('a report that ran no attacks',
+  $$insert into adversarial_reports(backtest_run_id,suite_version,seed,findings,severity_ranking,attacks_run,attacks_skipped)
+    values ('b0000000-0000-0000-0000-0000000000ff','adversarial-2',1,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb)$$);
+SELECT pg_temp.must_reject('findings stored as an object rather than a list',
+  $$insert into adversarial_reports(backtest_run_id,suite_version,seed,findings,severity_ranking,attacks_run,attacks_skipped)
+    values ('b0000000-0000-0000-0000-0000000000ff','adversarial-3',1,'{}'::jsonb,'[]'::jsonb,'["SAMPLE_SIZE"]'::jsonb,'[]'::jsonb)$$);
+SELECT pg_temp.must_allow('a rerun under a new suite version',
+  $$insert into adversarial_reports(backtest_run_id,suite_version,seed,findings,severity_ranking,attacks_run,attacks_skipped)
+    values ('b0000000-0000-0000-0000-0000000000ff','adversarial-2',20260828,'[]'::jsonb,'[]'::jsonb,'["SAMPLE_SIZE"]'::jsonb,'[]'::jsonb)$$);
+
 \echo '--- soft-delete guard (5.1) ---'
 SELECT pg_temp.must_allow('assert_no_soft_delete_columns() on a clean schema',
   $$select assert_no_soft_delete_columns()$$);

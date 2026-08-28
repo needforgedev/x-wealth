@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   MarketDataError,
+  assertAdjustmentHolds,
   assertValidSeries,
   barIssues,
   closes,
+  corporateActionJumps,
   seriesIssues,
   type Bar,
 } from "./market-data";
@@ -267,5 +269,62 @@ describe("reading a series", () => {
   it("extracts closes in order", () => {
     const bars = flatBars({ from: MONDAY, closes: ["100", "101", "102"] });
     expect(closes(bars)).toEqual([1_000_000, 1_010_000, 1_020_000]);
+  });
+});
+
+describe("corporate actions asserted, not trusted (W5-05)", () => {
+  /**
+   * An unadjusted bonus does not announce itself. A 1:1 bonus halves the quoted
+   * price overnight, the engine reads a −50% session, every stop fires, and the
+   * backtest reports a catastrophe that never happened — with no error anywhere.
+   *
+   * `CLAUDE.md` §7.6 requires adjusted data. The vendor *says* its series is
+   * adjusted; this is the check that the claim is true, which is a different
+   * thing from the claim.
+   */
+  const series = (closes: string[]) =>
+    ohlcBars({
+      from: "2026-01-05",
+      rows: closes.map((close) => ({ open: close, high: close, low: close, close })),
+    });
+
+  it("passes an ordinary series, including a hard limit-down session", () => {
+    // −19.5%: brutal, permitted by a 20% band, and not a corporate action.
+    expect(corporateActionJumps(series(["100", "98", "78.9", "80"]))).toHaveLength(0);
+  });
+
+  it("catches the signature of a 1:1 bonus", () => {
+    const jumps = corporateActionJumps(series(["1327.85", "1334.35", "667.20", "670"]));
+
+    expect(jumps).toHaveLength(1);
+    expect(jumps[0].movePercent).toBeLessThan(-49);
+  });
+
+  it("refuses a series that claims to be adjusted and is not", () => {
+    expect(() =>
+      assertAdjustmentHolds("NSE:TEST", series(["1000", "1002", "501", "505"]), "ADJUSTED"),
+    ).toThrow(/declared ADJUSTED/);
+  });
+
+  it("permits a raw series that says it is raw", () => {
+    // Using unadjusted data is allowed provided the run discloses it, and the
+    // run does — `methodology.data.adjustment` travels with every result.
+    expect(() =>
+      assertAdjustmentHolds("NSE:TEST", series(["1000", "1002", "501", "505"]), "UNADJUSTED"),
+    ).not.toThrow();
+  });
+
+  it("names the sessions, so the failure is actionable", () => {
+    let message = "";
+    try {
+      assertAdjustmentHolds("NSE:TEST", series(["1000", "1002", "501", "505"]), "ADJUSTED");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    // A loader that fails without saying which date broke sends someone to
+    // diff two years of bars by hand.
+    expect(message).toContain("NSE:TEST");
+    expect(message).toMatch(/2026-01-\d\d/);
   });
 });

@@ -1,6 +1,7 @@
 import { ENGINE_VERSION } from "./backtest";
 import type { SourceMetadata } from "./market-data";
 import type { CostModel } from "./costs";
+import { FILL_MODEL, type FillModel } from "./session-step";
 
 /**
  * What a run has to say about how it was produced.
@@ -37,6 +38,17 @@ export type RunMethodology = {
     signal: string;
     fill: string;
     stopLoss: string;
+    target: string;
+    /**
+     * Which fill model resolved sessions that reached the stop and the target.
+     *
+     * Machine-readable as well as prose, because this is the one assumption
+     * that can silently invert a result and a reader comparing two runs needs
+     * to be able to tell at a glance whether they were produced under the same
+     * one. `CLAUDE.md` §7.6.
+     */
+    fillModel: FillModel;
+    intrabar: string;
     gapHandling: string;
     positionSizing: string;
     openPositionsAtEnd: string;
@@ -57,8 +69,13 @@ export type RunMethodology = {
   metrics: {
     sharpeRiskFreeRate: string;
     sharpeAnnualisation: string;
+    sortinoBasis: string;
+    calmarBasis: string;
     drawdownBasis: string;
     hitRateBasis: string;
+    rMultipleBasis: string;
+    grossAndNet: string;
+    sampleAdequacy: string;
   };
 
   /** Known limitations. Stated, not omitted. */
@@ -99,6 +116,20 @@ export function buildMethodology(input: {
         "A stop is a resting order and may fill within a session, including the session the " +
         "position opened. It is placed the stated percentage below the entry price, rounded " +
         "down to the tick.",
+      target:
+        "A take-profit target, where the strategy declares one, is also a resting order and may " +
+        "fill within a session. It is placed the stated percentage above the entry price, " +
+        "rounded up to the tick — the opposite direction to the stop, so that in both cases the " +
+        "rounding costs the strategy rather than favours it. A strategy with no target exits on " +
+        "its exit rule or its stop alone.",
+      fillModel: FILL_MODEL,
+      intrabar:
+        "When a single session reaches both the stop and the target, the bar does not record " +
+        "which happened first, and the two orderings give opposite outcomes. This run assumes " +
+        "the STOP filled first, always. That is the pessimistic reading and it is applied " +
+        "without exception — not sampled, not split, and never resolved in the strategy's " +
+        "favour. Resolving the true order needs 1-minute data inside the bar, which this data " +
+        "layer does not yet provide; until it does, an ambiguous session is recorded as a loss.",
       gapHandling:
         "If a session opens at or below the stop, the fill is the open, not the stop — nobody " +
         "could have sold at a level the market opened below.",
@@ -137,10 +168,28 @@ export function buildMethodology(input: {
       sharpeAnnualisation:
         "Session returns scaled by the square root of 252. Reported as null, not zero, when " +
         "there is too little data or no dispersion to measure.",
+      sortinoBasis:
+        "Downside deviation against a zero target return, annualised the same way. Null when no " +
+        "session lost money — unmeasured, not riskless.",
+      calmarBasis:
+        "Compound annual return divided by the maximum drawdown. Null when the curve never drew " +
+        "down, because a strategy that has not had a bad run has no Calmar rather than a large one.",
       drawdownBasis: "Largest peak-to-trough fall in mark-to-market equity, against the running peak.",
       hitRateBasis:
         "Share of closed trades with a positive net result. Breakeven trades count in the " +
         "denominator and as neither a win nor a loss.",
+      rMultipleBasis:
+        "Each trade's net result divided by what it risked at entry — quantity times the distance " +
+        "from entry to stop. Trades that risked nothing measurable are excluded rather than " +
+        "counted as an unbounded R.",
+      grossAndNet:
+        "Gross and net are reported together, never one without the other, so the charges are " +
+        "visible as a gap rather than merely subtracted. The gross figure is this run's own " +
+        "trades with their charges added back, not a separate cost-free simulation — a run " +
+        "without charges would have funded different quantities and would not be comparable.",
+      sampleAdequacy:
+        "Below 100 closed trades the sample cannot support an inference, and the result is " +
+        "marked inadequate. The threshold is a stated convention, not a significance test.",
     },
 
     caveats: CAVEATS,
@@ -163,4 +212,9 @@ export const CAVEATS: string[] = [
     "the current NSE and SEBI circulars before a result is relied upon.",
   "Liquidity is not modelled. Fills assume the stated quantity was available at the fill price, " +
     "which is a weaker assumption for a thin instrument than a liquid one.",
+  "Sessions that reached both the stop and the target are recorded as stop-outs, because daily " +
+    "bars do not carry the order of events within them (W5-13). This is deliberately the " +
+    "pessimistic reading, so a strategy with a wide target and a tight stop is penalised here " +
+    "more than it would be in practice. Resolving it needs 1-minute data the data layer does " +
+    "not yet expose.",
 ];

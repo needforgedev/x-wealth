@@ -200,3 +200,23 @@ export function stopPriceFor(entry: PriceTicks, stopLossPercent: number): PriceT
   const stop = Math.floor((entry as number) * (1 - stopLossPercent / 100));
   return Math.max(1, stop) as PriceTicks;
 }
+
+/**
+ * The take-profit price for a long entry, in ticks. Null when the strategy
+ * declares no target and exits on its rule alone.
+ *
+ * Rounds **up**, for the same reason `stopPriceFor` rounds down: rounding is a
+ * choice about who benefits from the half-tick, and it is never us. A target
+ * rounded up is marginally harder to reach, so a rounding error can only ever
+ * cost the strategy a fill it might have had — never hand it one it did not.
+ *
+ * Always above the entry, and the stop is always below it, so the two levels
+ * cannot cross and a bar can never be ambiguous about which is which. That is
+ * what lets `exitIfLevelHit` treat "both reachable in one session" as a
+ * question about ordering rather than about identity.
+ */
+export function targetPriceFor(entry: PriceTicks, targetPercent: number | null): PriceTicks | null {
+  if (targetPercent === null) return null;
+  const target = Math.ceil((entry as number) * (1 + targetPercent / 100));
+  return Math.max(1, target) as PriceTicks;
+}

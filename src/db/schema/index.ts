@@ -8,7 +8,7 @@
  *
  * Append-only tables:
  *   strategy_versions · backtest_runs · forward_tests · paper_trades
- *   ai_interactions · audit_log
+ *   ai_interactions · adversarial_reports · audit_log
  *
  * Things that must never appear in this schema:
  *   - `deleted_at`, `is_archived`, `visible` or any other soft-delete flag on
@@ -35,6 +35,7 @@ export * from "./users";
 export * from "./strategies";
 export * from "./testing";
 export * from "./ai";
+export * from "./adversarial";
 export * from "./portfolio";
 export * from "./market-data";
 export * from "./audit";

@@ -23,7 +23,8 @@
     "advance-forward-tests": "tsx scripts/advance-forward-tests.mts",
     "verify-forward-test": "tsx scripts/verify-forward-test.mts",
     "verify-standing": "tsx scripts/verify-forward-test-standing.mts",
-    "check-forward-tests": "tsx scripts/check-forward-test-health.mts"
+    "check-forward-tests": "tsx scripts/check-forward-test-health.mts",
+    "verify-adversarial": "tsx scripts/verify-adversarial.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

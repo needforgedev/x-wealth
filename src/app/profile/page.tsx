@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
 import { BottomNav } from "@/components/BottomNav";
@@ -6,15 +7,36 @@ import { ProfileIdentity } from "@/components/screens/ProfileIdentity";
 import { TopBar } from "@/components/TopBar";
 import { MaskIcon } from "@/components/ui/MaskIcon";
 import { SETTINGS } from "@/lib/profile";
+import { currentIdentity } from "@/server/identity";
 
-/** Profile (742:1653) — identity, settings menu and logout. */
-export default function ProfilePage() {
+export const dynamic = "force-dynamic";
+
+/**
+ * The signed-in account.
+ *
+ * Two things were wrong here and both survived the teardown because this screen
+ * imports no schema, so nothing in CI could see them — the same blind spot that
+ * left the landing page pitching certified experts.
+ *
+ * **It had no auth guard.** A signed-out visitor could open it, and every other
+ * profile route with it. Guarded now, like every page that shows anything about
+ * a person.
+ *
+ * **It showed a fixture.** `ProfileIdentity` rendered a hardcoded "Raj Bansal /
+ * Member since 2021" to whoever was looking. A profile that displays somebody
+ * else's name is worse than a 404: the reader has no reason to doubt it.
+ */
+export default async function ProfilePage() {
+  const identity = await currentIdentity();
+  if (!identity?.user) redirect("/");
+  const user = identity.user;
+
   return (
     <AppShell className="bg-surface-alt">
-      <TopBar />
+      <TopBar showBack backHref="/home" />
 
       <section className="shrink-0 bg-surface pt-[20px] pb-[24px]">
-        <ProfileIdentity />
+        <ProfileIdentity user={user} />
         <Link
           href="/profile/edit"
           className="mt-[19px] flex items-center justify-center gap-[10px] text-[16px] font-semibold text-brand"

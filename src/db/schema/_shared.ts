@@ -129,8 +129,20 @@ export type { StrategyDefinition } from "@/domain/strategy";
 
 /**
  * Computed results. We report what happened and never characterise it — no
- * score, no grade, no verdict field will ever be added here
- * (`x-wealth-product.md` §5.6).
+ * score, no grade, no verdict field will ever be added here (`CLAUDE.md` §8.7).
+ *
+ * ## Why the newer fields are optional
+ *
+ * `backtest_runs` is append-only, so rows written by an older engine are still
+ * there and still readable, and they do not have the `W5-07` metrics because
+ * the engine that produced them did not compute any. Typing those fields as
+ * required would be a statement about the table that is false for every row
+ * written before `backtest-2`.
+ *
+ * A reader therefore has to handle absence. That is the correct shape: the
+ * alternative is defaulting a missing `sortino` to zero somewhere downstream,
+ * which reads as "measured, and it was poor" for a run that never measured it.
+ * `ENGINE_VERSION` in each run's methodology says which vintage produced it.
  */
 export type RunResults = {
   netReturnPercent: number;
@@ -141,6 +153,22 @@ export type RunResults = {
   sharpe: number | null;
   tradeCount: number;
   exposurePercent: number;
+
+  // Added with `backtest-2` (W5-07, W5-14). Absent on earlier runs.
+  grossReturnPercent?: number;
+  totalCostsPaise?: number;
+  costDragPercent?: number | null;
+  expectancyPaise?: number;
+  expectancyR?: number | null;
+  rMultiples?: number[];
+  profitFactor?: number | null;
+  sortino?: number | null;
+  calmar?: number | null;
+  longestLosingStreak?: number;
+  topTradeSharePercent?: number | null;
+  symbolsTraded?: number;
+  sampleAdequate?: boolean;
+
   [key: string]: unknown;
 };
 

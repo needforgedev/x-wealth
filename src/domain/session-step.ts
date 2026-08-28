@@ -1,4 +1,4 @@
-import { stopPriceFor } from "./backtest-signals";
+import { stopPriceFor, targetPriceFor } from "./backtest-signals";
 import { accountForTrade, chargesForLeg, type CostModel, type TradeAccounting } from "./costs";
 import type { Bar } from "./market-data";
 import { positionValue, type PriceTicks } from "./money";
@@ -37,6 +37,31 @@ import type { ResolvedDefinition } from "./strategy";
  * Filling a gap-down at the stop price would hand the strategy money nobody
  * could have made.
  *
+ * A take-profit target is the same kind of thing in the other direction: a
+ * resting order, filled at the open when the session gaps above it, otherwise at
+ * the target when the high reaches it.
+ *
+ * ## The intrabar problem (`CLAUDE.md` §7.6, `W5-13`)
+ *
+ * Once a position has both a stop and a target, a single daily bar can reach
+ * both — low ≤ stop and high ≥ target — and **the bar does not say which came
+ * first**. O=100 H=105 L=95 C=102 is consistent with up-then-down and with
+ * down-then-up, and with a target at 104 and a stop at 96 those two paths give
+ * opposite outcomes. §7.6 calls this the biggest source of false results in a
+ * backtest, and it is: the optimistic reading turns a losing strategy into a
+ * winning one and nothing in the output looks wrong.
+ *
+ * The rule here is **the stop is assumed to have filled first, always.** §7.6
+ * permits resolving the order with 1-minute data inside the bar; the data layer
+ * has no intraday method (`MarketDataSource` exposes `dailyBars` and
+ * `latestBar` only), so that option does not exist yet and the pessimistic
+ * assumption is not a fallback but the whole policy. It is recorded per run in
+ * `methodology.execution.intrabar`, because a user who does not know the fill
+ * model does not understand their own track record.
+ *
+ * When 1-minute resolution lands, this is the function that changes and
+ * `FillModel` is what a run records to say which one it used.
+ *
  * ## Long only
  *
  * `stopLossPercent` is defined as a percentage *below the entry* and the entry
@@ -50,12 +75,26 @@ export type PositionState = {
   entryDate: IsoDate;
   entryPrice: PriceTicks;
   stopPrice: PriceTicks;
+  /** Null when the strategy declares no target and exits on its rule alone. */
+  targetPrice: PriceTicks | null;
 };
 
 /** Decided at one session's close, acted on at the next session's open. */
 export type PendingOrder = "ENTER" | "EXIT" | null;
 
-export type ExitReason = "SIGNAL" | "STOP_LOSS" | "END_OF_PERIOD";
+export type ExitReason = "SIGNAL" | "STOP_LOSS" | "TARGET" | "END_OF_PERIOD";
+
+/**
+ * How a session that reached both levels was resolved.
+ *
+ * Recorded per run rather than assumed, because it changes the numbers. Only
+ * one value is reachable today — see the intrabar note above — and the type
+ * exists so that a run produced before 1-minute resolution can still say what
+ * it did, rather than being reinterpreted under a policy it never ran under.
+ */
+export type FillModel = "STOP_FIRST_WHEN_AMBIGUOUS" | "INTRABAR_1M";
+
+export const FILL_MODEL: FillModel = "STOP_FIRST_WHEN_AMBIGUOUS";
 
 export type SessionInput = {
   bar: Bar;
@@ -86,6 +125,7 @@ export type OpenedPosition = {
   qty: number;
   price: PriceTicks;
   stopPrice: PriceTicks;
+  targetPrice: PriceTicks | null;
   /** Cash paid out: stock value plus the charges on the buy leg. */
   outlayPaise: number;
 };
@@ -94,6 +134,16 @@ export type ClosedPosition = {
   qty: number;
   entryDate: IsoDate;
   entryPrice: PriceTicks;
+  /**
+   * The stop this position was opened under.
+   *
+   * Carried out with the closed trade because it is the denominator of the
+   * R-multiple — the trade's result expressed in units of what it originally
+   * risked — and that cannot be reconstructed afterwards from entry and exit
+   * alone. `CLAUDE.md` §8.12 and the primer both treat R as the unit a
+   * strategy's edge is actually measured in.
+   */
+  stopPrice: PriceTicks;
   exitPrice: PriceTicks;
   reason: ExitReason;
   accounting: TradeAccounting;
@@ -135,14 +185,16 @@ export function advanceSession(input: SessionInput): SessionOutcome {
         entryDate: bar.date,
         entryPrice: entry.price,
         stopPrice: entry.stopPrice,
+        targetPrice: entry.targetPrice,
       };
 
-      // A stop can fire on the entry session itself — it is a resting order,
-      // and the session still has a low below the open we bought at.
-      const stopped = stopIfHit(position, bar, costModel, { skipOpenGap: true });
-      if (stopped) {
-        closed = stopped;
-        cashPaise += stopped.proceedsPaise;
+      // A stop or a target can fire on the entry session itself — both are
+      // resting orders, and the session still has a low and a high either side
+      // of the open we bought at.
+      const settled = exitIfLevelHit(position, bar, costModel, { skipOpenGap: true });
+      if (settled) {
+        closed = settled;
+        cashPaise += settled.proceedsPaise;
         position = null;
       }
     }
@@ -186,6 +238,7 @@ function openAt(
     qty,
     price,
     stopPrice: stopPriceFor(price, definition.stopLossPercent),
+    targetPrice: targetPriceFor(price, definition.targetPercent),
     outlayPaise: positionValue(price, qty) + chargesForLeg(model, { side: "BUY", price, qty }).totalPaise,
   };
 }
@@ -294,13 +347,14 @@ function closeIfDue(
   isFinalSession: boolean,
 ): ClosedPosition | null {
   if (pending === "EXIT") {
-    const reason: ExitReason =
-      (bar.open as number) <= (position.stopPrice as number) ? "STOP_LOSS" : "SIGNAL";
-    return settle(position, bar.open, reason, model);
+    // All three fill at the same price — the open — so only the recorded reason
+    // differs. It is worth getting right anyway: the exit-reason mix is what
+    // tells a user whether their rule or their stop is doing the work.
+    return settle(position, bar.open, reasonAtOpen(position, bar), model);
   }
 
-  const stopped = stopIfHit(position, bar, model, { skipOpenGap: false });
-  if (stopped) return stopped;
+  const settled = exitIfLevelHit(position, bar, model, { skipOpenGap: false });
+  if (settled) return settled;
 
   // Nothing may be left open past the end of the reported window. An unclosed
   // position is an unrealised number, and reporting one as a result would let a
@@ -310,22 +364,61 @@ function closeIfDue(
   return null;
 }
 
-function stopIfHit(
+function reasonAtOpen(position: PositionState, bar: Bar): ExitReason {
+  const open = bar.open as number;
+  if (open <= (position.stopPrice as number)) return "STOP_LOSS";
+  if (position.targetPrice !== null && open >= (position.targetPrice as number)) return "TARGET";
+  return "SIGNAL";
+}
+
+/**
+ * Resolve a session against the position's resting orders.
+ *
+ * The order of these branches is the whole of `W5-13`, so each one says why it
+ * sits where it does.
+ */
+function exitIfLevelHit(
   position: PositionState,
   bar: Bar,
   model: CostModel,
   options: { skipOpenGap: boolean },
 ): ClosedPosition | null {
   const stop = position.stopPrice as number;
+  const target = position.targetPrice === null ? null : (position.targetPrice as number);
 
-  if (!options.skipOpenGap && (bar.open as number) <= stop) {
-    // Gapped through overnight. The fill is the open, not the stop — nobody
-    // could have sold at a level the market opened below.
-    return settle(position, bar.open, "STOP_LOSS", model);
+  if (!options.skipOpenGap) {
+    // Gapped through overnight. The fill is the open, not the level — nobody
+    // could have sold at a price the market opened below.
+    if ((bar.open as number) <= stop) return settle(position, bar.open, "STOP_LOSS", model);
+
+    // The same logic in our favour, and it is still the truth: a session that
+    // opens above the target filled there, at the open. Refusing to model the
+    // favourable gap while modelling the unfavourable one is not conservatism,
+    // it is a thumb on the scale in the other direction.
+    if (target !== null && (bar.open as number) >= target) {
+      return settle(position, bar.open, "TARGET", model);
+    }
   }
-  if ((bar.low as number) <= stop) {
+
+  const stopReached = (bar.low as number) <= stop;
+  const targetReached = target !== null && (bar.high as number) >= target;
+
+  /**
+   * Both levels inside one bar. The bar cannot say which came first, so the
+   * stop is taken — always, never sampled, never split.
+   *
+   * This branch must precede both single-level branches below. Written the
+   * other way round the target would win whenever it happened to be tested
+   * first, and the resulting equity curve would be a report on the order of two
+   * `if` statements rather than on the strategy.
+   */
+  if (stopReached && targetReached) {
     return settle(position, position.stopPrice, "STOP_LOSS", model);
   }
+
+  if (stopReached) return settle(position, position.stopPrice, "STOP_LOSS", model);
+  if (targetReached) return settle(position, position.targetPrice!, "TARGET", model);
+
   return null;
 }
 
@@ -354,6 +447,7 @@ function settle(
     qty: position.qty,
     entryDate: position.entryDate,
     entryPrice: position.entryPrice,
+    stopPrice: position.stopPrice,
     exitPrice,
     reason,
     accounting,

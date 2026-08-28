@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function CompleteProfilePage() {
   const identity = await currentIdentity();
   if (!identity) redirect("/");
-  if (!identity.user) redirect(identity.user ? "/advisor/status" : "/");
+  if (!identity.user) redirect("/");
 
   const user = identity.user;
   const [firstName = "", ...rest] = (user.contactName ?? "").split(" ");
