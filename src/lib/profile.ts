@@ -22,6 +22,14 @@ export type SettingsItem = {
  */
 export const SETTINGS: ReadonlyArray<SettingsItem> = [
   {
+    // §7.14 puts the ledger on the user's own profile. It is the first entry
+    // rather than the last: the record is the product, and account details are
+    // housekeeping.
+    href: "/ledger",
+    label: "Your record",
+    icon: { src: "/assets/icon-work-outline.svg", width: 24, height: 24 },
+  },
+  {
     href: "/profile/edit",
     label: "Account Details",
     icon: { src: "/assets/icon-person.svg", width: 24, height: 24 },

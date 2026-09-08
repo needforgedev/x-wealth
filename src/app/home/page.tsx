@@ -5,6 +5,7 @@ import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
 import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
 import { currentIdentity } from "@/server/identity";
+import { ledgerCounts } from "@/server/queries/ledger";
 import { listStrategies } from "@/server/actions/strategy";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,10 @@ export default async function HomePage() {
   if (!identity?.user) redirect("/");
   if (!hasAcknowledgedRisk(identity.user)) redirect(nextPath(identity.user));
 
-  const result = await listStrategies();
+  const [result, counts] = await Promise.all([
+    listStrategies(),
+    ledgerCounts(identity.user.id),
+  ]);
   const strategies = result.ok ? result.data : [];
 
   return (
@@ -56,6 +60,41 @@ export default async function HomePage() {
 
           Nothing replaces it. The strategy list below is the whole screen.
         */}
+        {/*
+          The record, above the strategy list rather than below it.
+          §7.14's counts are the frame these strategies are read inside — how
+          many windows were opened and how many were stopped. Put after the
+          list, it reads as a footnote about past attempts; put here, it is the
+          context for the next one.
+        */}
+        <Link
+          href="/ledger"
+          className="mt-6 flex items-baseline justify-between gap-3 rounded-[8px] border border-line p-4"
+        >
+          <span className="text-[13px] text-ink">
+            {counts.forwardTestsStarted === 0 ? (
+              <>
+                <span className="font-semibold">No forward tests yet.</span>
+                <span className="mt-1 block text-muted">
+                  {counts.backtests} {counts.backtests === 1 ? "backtest" : "backtests"} run.
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold tabular-nums">
+                  {counts.forwardTestsStarted}{" "}
+                  {counts.forwardTestsStarted === 1 ? "forward test" : "forward tests"} run
+                </span>
+                <span className="mt-1 block tabular-nums text-muted">
+                  {counts.running} live · {counts.completed} completed · {counts.abandoned}{" "}
+                  abandoned
+                </span>
+              </>
+            )}
+          </span>
+          <span className="shrink-0 text-[13px] font-semibold text-brand underline">Record</span>
+        </Link>
+
         <div className="mt-6 flex items-center justify-between">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
             Strategies
