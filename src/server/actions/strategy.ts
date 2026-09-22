@@ -19,9 +19,12 @@ import type { ActionResult } from "@/server/actions/auth";
  *
  * Two invariants shape everything here:
  *
- * - **Authoring is gated on a live registration** (`x-wealth-product.md` §5.4),
- *   so every action goes through `requireUser()`.
- * - **`strategy_versions` is append-only** (§5.1). A revision inserts a new row
+ * - **A strategy belongs to exactly one account** (`CLAUDE.md` §8.5), so every
+ *   action goes through `requireUser()` and every row is scoped by `user_id`.
+ *   This was a registration gate in v1 (`CLAUDE-v1-ARCHIVED-advisor-marketplace.md`
+ *   §5.4); `requirePublishingRights` was deleted in `W24-06` because nothing is
+ *   published in v2, and ownership is the only check left standing.
+ * - **`strategy_versions` is append-only** (§8.1). A revision inserts a new row
  *   pointing at its parent; nothing ever updates a version. The database
  *   enforces this with a trigger, so a mistake here fails loudly rather than
  *   quietly rewriting history.

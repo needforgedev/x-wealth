@@ -21,7 +21,7 @@ import { strategyVersions } from "./strategies";
  * `cost_model` is NOT NULL and there is no flag that disables it. Every figure
  * in `results` is net of brokerage, STT, stamp duty, exchange charges, SEBI
  * turnover fee, GST and a stated slippage assumption. Gross returns are never
- * displayed and never stored (`x-wealth-product.md` §5.3).
+ * displayed and never stored (`CLAUDE.md` §8.3).
  */
 export const backtestRuns = pgTable(
   "backtest_runs",
@@ -61,7 +61,7 @@ export const backtestRuns = pgTable(
  *
  * Everything that defines the test — `strategy_version_id`, the declared
  * hypothesis, initial capital, the cost model, `started_at`, `planned_end_at`
- * — **freezes the moment status becomes RUNNING** (`x-wealth-product.md` §5.2).
+ * — **freezes the moment status becomes RUNNING** (`CLAUDE.md` §8.2).
  * Changing a parameter means abandoning this test and starting a new one, and
  * the abandoned test stays permanently visible.
  *
@@ -122,7 +122,7 @@ export const paperTrades = pgTable(
 
     symbol: symbol().notNull(),
     side: tradeSide("side").notNull(),
-    /** Derivatives trade in lots — quantity is not arbitrary (spec §10). */
+    /** Derivatives trade in lots — quantity is not arbitrary (spec §12). */
     qty: integer("qty").notNull(),
 
     entryPrice: price("entry_price").notNull(),

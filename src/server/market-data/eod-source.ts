@@ -16,7 +16,7 @@ import { toSymbol, type Symbol_ } from "../../domain/symbol";
  *
  * `plan.md` W3-02 calls this "always legal, always our floor", and the floor
  * part is the point: whatever the answer to the real-time question in
- * `x-wealth-product.md` §9 turns out to be, this implementation stays valid.
+ * `CLAUDE.md` §11 turns out to be, this implementation stays valid.
  * The engine takes a `MarketDataSource` and never learns which one it has.
  *
  * ## Why it reads a table rather than the vendor
@@ -43,7 +43,7 @@ import { toSymbol, type Symbol_ } from "../../domain/symbol";
  * Prices are decimal strings, not numbers. `numeric(18,4)` arrives from
  * postgres.js as a string precisely so it does not pass through a double on the
  * way, and `priceFromString` is the only sanctioned way to turn one into ticks
- * (`x-wealth-product.md` §10). A driver configured to parse numerics into
+ * (`CLAUDE.md` §12). A driver configured to parse numerics into
  * numbers would silently undo that, so this type refuses to accept one.
  */
 export type BarRow = {

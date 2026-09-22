@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PLACEHOLDER_CALENDAR_2026,
+  NSE_CALENDAR,
+  NSE_CALENDAR_COVERS,
   SessionError,
   WEEKENDS_ONLY,
   addSessions,
@@ -82,8 +83,8 @@ describe("addSessions", () => {
 
   it("spans a 60-session window without drifting", () => {
     const start = "2026-01-01";
-    const end = addSessions(start, 60, PLACEHOLDER_CALENDAR_2026);
-    expect(sessionsBetween(start, end, PLACEHOLDER_CALENDAR_2026)).toBe(60);
+    const end = addSessions(start, 60, NSE_CALENDAR);
+    expect(sessionsBetween(start, end, NSE_CALENDAR)).toBe(60);
   });
 });
 
@@ -99,8 +100,8 @@ describe("sessionsBetween", () => {
   });
 
   it("agrees with addSessions", () => {
-    const to = addSessions("2026-03-02", 25, PLACEHOLDER_CALENDAR_2026);
-    expect(sessionsBetween("2026-03-02", to, PLACEHOLDER_CALENDAR_2026)).toBe(25);
+    const to = addSessions("2026-03-02", 25, NSE_CALENDAR);
+    expect(sessionsBetween("2026-03-02", to, NSE_CALENDAR)).toBe(25);
   });
 
   it("counts a plain week as five sessions", () => {
@@ -171,12 +172,63 @@ describe("input validation", () => {
   });
 });
 
-describe("the placeholder calendar", () => {
-  it("is flagged as incomplete so nobody ships it by accident", () => {
-    expect(PLACEHOLDER_CALENDAR_2026.name).toContain("incomplete");
-    // The real NSE list is ~15 days a year. If this ever looks complete,
-    // it should be renamed and this test updated deliberately.
-    expect(PLACEHOLDER_CALENDAR_2026.holidays.size).toBeLessThan(10);
+describe("the NSE calendar", () => {
+  const YEARS = ["2023", "2024", "2025", "2026"];
+
+  /**
+   * The placeholder this replaced carried three holidays for one year, and the
+   * consequence was not an error anywhere — it was a 60-session window whose
+   * `planned_end_at` landed twelve calendar days early with seven sessions
+   * still to run. Nothing failed; the date was just wrong. A count is therefore
+   * the only thing that catches a year being truncated, half-entered, or
+   * dropped by a merge.
+   */
+  it("carries a full year of holidays for every year it claims to cover", () => {
+    for (const year of YEARS) {
+      const count = [...NSE_CALENDAR.holidays].filter((d) => d.startsWith(year)).length;
+      expect(count, `${year} has ${count} holidays`).toBeGreaterThanOrEqual(15);
+      expect(count, `${year} has ${count} holidays`).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it("covers exactly the years it says it does", () => {
+    const dates = [...NSE_CALENDAR.holidays].sort();
+    expect(dates[0] >= NSE_CALENDAR_COVERS.from).toBe(true);
+    expect(dates[dates.length - 1] <= NSE_CALENDAR_COVERS.to).toBe(true);
+    for (const d of dates) expect(YEARS).toContain(d.slice(0, 4));
+  });
+
+  /**
+   * The trap. Diwali Laxmi Pujan is a gazetted trading holiday, so normal
+   * trading never opens — but the exchange runs the Muhurat session that
+   * evening and a daily bar exists. A calendar that listed it as a holiday and
+   * stopped there would make `assertValidSeries` reject four genuine bars.
+   *
+   * Asserted from both directions: it is in the holiday list *and* it resolves
+   * as a session. Dropping either half breaks exactly one of these.
+   */
+  it("treats Diwali Muhurat days as sessions despite being holidays", () => {
+    for (const date of ["2023-11-12", "2024-11-01", "2025-10-21", "2026-11-08"]) {
+      expect(NSE_CALENDAR.holidays.has(date), `${date} listed as a holiday`).toBe(true);
+      expect(isTradingSession(date, NSE_CALENDAR), `${date} is a session`).toBe(true);
+    }
+  });
+
+  it("closes the market on ordinary holidays", () => {
+    for (const date of ["2026-01-26", "2026-03-03", "2026-12-25", "2025-08-15"]) {
+      expect(isTradingSession(date, NSE_CALENDAR), date).toBe(false);
+    }
+  });
+
+  /**
+   * The count the placeholder got wrong, pinned as a number. A 60-session
+   * window opened on the first session of March 2026 ends on 3 June, not the
+   * 22 May the three-holiday placeholder reported.
+   */
+  it("counts a 60-session window across real holidays", () => {
+    const end = addSessions("2026-03-02", 59, NSE_CALENDAR);
+    expect(sessionsBetween("2026-03-02", end, NSE_CALENDAR)).toBe(59);
+    expect(end > "2026-05-22").toBe(true);
   });
 });
 
@@ -232,7 +284,7 @@ describe("special sessions", () => {
   it("carries the six sessions observed in the loaded universe", () => {
     for (const date of ["2023-11-12", "2024-01-20", "2024-03-02", "2024-05-18", "2025-02-01", "2026-02-01"]) {
       expect(isWeekend(date)).toBe(true);
-      expect(isTradingSession(date, PLACEHOLDER_CALENDAR_2026)).toBe(true);
+      expect(isTradingSession(date, NSE_CALENDAR)).toBe(true);
     }
   });
 });

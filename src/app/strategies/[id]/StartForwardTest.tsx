@@ -14,7 +14,7 @@ import { startForwardTest } from "@/server/actions/forward-test";
  * which happens in the same transaction that creates it — there is deliberately
  * no draft state to come back to and tune, because a draft that can be edited
  * while watching the market is exactly what the freeze exists to prevent
- * (`x-wealth-product.md` §5.2).
+ * (`CLAUDE.md` §8.2).
  *
  * So the consequences are stated before the fields, not in a toast afterwards,
  * and the button says what it does rather than "Save".

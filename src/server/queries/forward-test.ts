@@ -66,7 +66,7 @@ export async function loadForwardTestForUser(forwardTestId: string, userId: stri
  *
  * No filter and no way to add one. An abandoned test is not a failure state to
  * be tidied away; it is the denominator that makes a completed one mean
- * something (`x-wealth-product.md` §5.2, PRD §5.6).
+ * something (`CLAUDE.md` §8.2, PRD §5.6).
  */
 export async function listForwardTestsForStrategy(strategyId: string, userId: string) {
   return db()

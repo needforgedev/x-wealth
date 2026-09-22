@@ -24,7 +24,7 @@ import postgres from "postgres";
 
 import { priceToString } from "@/domain/money";
 import { assertAdjustmentHolds, assertValidSeries } from "@/domain/market-data";
-import { PLACEHOLDER_CALENDAR_2026 } from "@/domain/session";
+import { NSE_CALENDAR } from "@/domain/session";
 import { UNIVERSE, type UniverseEntry } from "@/server/market-data/universe";
 import {
   MAX_DAILY_RANGE_YEARS,
@@ -178,7 +178,7 @@ try {
       // Validate before writing, not after. The table's CHECKs would catch a
       // corrupt row too, but they cannot say *which* rule a series broke, and
       // ordering and duplicates are not expressible as a row constraint at all.
-      assertValidSeries(bars, PLACEHOLDER_CALENDAR_2026);
+      assertValidSeries(bars, NSE_CALENDAR);
 
       // W5-05: assert the adjustment rather than trust it. Upstox says its
       // daily series is corporate-action adjusted and the RELIANCE 1:1 bonus

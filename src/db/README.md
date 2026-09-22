@@ -1,7 +1,7 @@
 # Database
 
-Supabase (Postgres) + Drizzle ORM. See `plan.md` §5 for the decision record and
-`x-wealth-product.md` §5–§6 for the invariants this schema exists to enforce.
+Supabase (Postgres) + Drizzle ORM. See `plan.md` §8 for the decision record and
+`CLAUDE.md` §8–§7.3 for the invariants this schema exists to enforce.
 
 **Current state: schema and migrations are written, nothing is wired.** No app
 code imports `src/db`, no migration has been run, and no credentials exist yet.
@@ -106,12 +106,12 @@ raises an exception.
 
 ### Why this shape
 
-`x-wealth-product.md` §5.1 says no UPDATE on any field that affects a recorded
+`CLAUDE.md` §8.1 says no UPDATE on any field that affects a recorded
 result. A forward test and a paper trade are both records of something with a
 duration — a trade opens now and closes later. Modelling that as a strictly
 insert-only event log was the alternative; a single row with one permitted
 write-once transition was chosen instead because it matches the data model in
-spec §6 exactly and keeps the read path simple.
+spec §7.3 exactly and keeps the read path simple.
 
 The invariant is preserved in the sense that matters: **a recorded result can
 never be changed.** You may record the close of an open trade once. You may not

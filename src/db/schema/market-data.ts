@@ -16,7 +16,7 @@ import { instrumentKind, price, priceAdjustment, symbol, symbolCheck, timestampT
  * What is immutable is the claim a run makes about its data. That lives in
  * `backtest_runs.methodology`, which carries the source name, the adjustment
  * and the vintage — so a restatement changes future runs and leaves past ones
- * describing exactly what they saw (`x-wealth-product.md` §5.3, PRD §5.3).
+ * describing exactly what they saw (`CLAUDE.md` §8.3, PRD §5.3).
  */
 
 /**
@@ -36,7 +36,7 @@ export const instruments = pgTable(
     name: text("name").notNull(),
     kind: instrumentKind("kind").notNull(),
 
-    /** 1 for cash equities and indices; derivatives trade in lots (§10). */
+    /** 1 for cash equities and indices; derivatives trade in lots (§12). */
     lotSize: integer("lot_size").notNull(),
     /** Smallest permitted price increment, same fixed precision as a price. */
     tickSize: price("tick_size").notNull(),

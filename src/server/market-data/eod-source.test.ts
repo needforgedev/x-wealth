@@ -10,7 +10,7 @@ import { endOfDaySource, inMemoryStore, type BarRow } from "./eod-source";
 /**
  * Rows shaped exactly as `daily_bars` yields them — prices as decimal strings,
  * because `numeric(18,4)` arrives from postgres.js as a string and that is the
- * whole reason it is declared that way (`x-wealth-product.md` §10).
+ * whole reason it is declared that way (`CLAUDE.md` §12).
  */
 const RELIANCE: BarRow[] = [
   { date: "2026-08-17", open: "1316.00", high: "1322.00", low: "1310.00", close: "1316.00", volume: 13_766_096 },
@@ -61,7 +61,7 @@ const source = (overrides: { validateOnRead?: boolean } = {}) =>
  * `plan.md` W3-08: "a conformance suite every implementation must pass, so the
  * engine genuinely cannot tell them apart". The fixture source passes it; if
  * this one does too, then swapping them cannot change a backtest, which is the
- * entire promise made in `x-wealth-product.md` §9.
+ * entire promise made in `CLAUDE.md` §11.
  */
 describe("endOfDaySource conformance", () => {
   it("satisfies the MarketDataSource contract", async () => {

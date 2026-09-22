@@ -12,7 +12,7 @@ import {
 /**
  * What a trade actually costs.
  *
- * `x-wealth-product.md` §5.3 is the whole reason this file exists:
+ * `CLAUDE.md` §8.3 is the whole reason this file exists:
  *
  *   > Every performance figure — backtest or forward test — must be net of:
  *   > brokerage, STT, stamp duty, exchange transaction charges, SEBI turnover
@@ -192,7 +192,7 @@ export function addBreakdowns(a: CostsBreakdown, b: CostsBreakdown): CostsBreakd
  * Gross, costs and net for a completed round trip.
  *
  * These three travel together by construction. There is deliberately no
- * `grossPnl(entry, exit)` export: §5.3 forbids a code path that yields a gross
+ * `grossPnl(entry, exit)` export: §8.3 forbids a code path that yields a gross
  * figure, and the cheapest way to honour that is to make it impossible to
  * obtain one without its costs attached.
  */

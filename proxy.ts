@@ -9,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * thing: keep the Supabase auth cookie fresh, which has to happen before a
  * Server Component renders or every request sees a stale session.
  *
- * **Authorisation is not here.** The registration gate (`x-wealth-product.md`
+ * **Authorisation is not here.** The registration gate (`CLAUDE-v1-ARCHIVED-advisor-marketplace.md`
  * §5.4) needs to read our `advisors` table, and a database round trip in a file
  * designed to run at a network boundary is the wrong shape. It lives instead in
  * `src/server/identity.ts` as a single guard every protected action calls —

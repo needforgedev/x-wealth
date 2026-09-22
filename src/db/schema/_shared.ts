@@ -4,12 +4,12 @@ import { bigint, numeric, pgEnum, text, timestamp } from "drizzle-orm/pg-core";
 /**
  * Shared column builders and enums.
  *
- * Read `x-wealth-product.md` §5 (hard invariants) and §10 (technical notes)
+ * Read `CLAUDE.md` §8 (hard invariants) and §10 (technical notes)
  * before changing anything here. Several choices below look like overkill and
  * are not:
  *
  * - Money is an integer count of paise. Never a float, never a numeric with a
- *   currency meaning. `x-wealth-product.md` §10.
+ *   currency meaning. `CLAUDE.md` §12.
  * - Prices are fixed-precision decimals, which is a different thing from money.
  * - Every timestamp is `timestamptz`. Store UTC, display IST. There is no
  *   24-hour market; session arithmetic needs the exchange holiday calendar.
@@ -47,7 +47,7 @@ export const symbolCheck = (column: string) =>
 /**
  * Forward-test lifecycle. Transitions are one-way and enforced in the database
  * — see the constraints migration. `strategy_version_id` freezes at RUNNING
- * (`x-wealth-product.md` §5.2).
+ * (`CLAUDE.md` §8.2).
  */
 export const forwardTestStatus = pgEnum("forward_test_status", [
   "DRAFT",
@@ -69,7 +69,7 @@ export const tradeSide = pgEnum("trade_side", ["BUY", "SELL"]);
  * dividends. Mirrors `PriceAdjustment` in `src/domain/market-data.ts`.
  *
  * `UNADJUSTED` is expressible rather than forbidden: some vendors sell raw
- * series and `x-wealth-product.md` §10 permits using them provided the run says
+ * series and `CLAUDE.md` §12 permits using them provided the run says
  * so. This column is that disclosure, and it travels with every bar.
  */
 export const priceAdjustment = pgEnum("price_adjustment", ["ADJUSTED", "UNADJUSTED"]);
@@ -113,15 +113,15 @@ export const marketSegment = pgEnum("market_segment", ["EQUITY", "FNO", "COMMODI
  * but only the sell of an intraday one, and stamp duty is buy-side only. A
  * flat `sttPercent` with the side rule living in code would mean a stored
  * model did not determine what was charged, which defeats the point of storing
- * it (`x-wealth-product.md` §5.3, PRD §5.3 on reproducible methodology).
+ * it (`CLAUDE.md` §8.3, PRD §5.3 on reproducible methodology).
  *
  * There is no `include_costs` flag anywhere in this system, by design.
  */
 export type { CostModel, CostsBreakdown } from "@/domain/costs";
 
 /**
- * A strategy definition is structured data, never code (`x-wealth-product.md`
- * §6). The shape is owned by `src/domain/strategy.ts` — re-exported here rather
+ * A strategy definition is structured data, never code (`CLAUDE-v1-ARCHIVED-advisor-marketplace.md`
+ * §7.3). The shape is owned by `src/domain/strategy.ts` — re-exported here rather
  * than restated, so the column type and the validator can never disagree about
  * what a definition is.
  */

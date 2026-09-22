@@ -33,7 +33,7 @@ import { requiredWarmUpBars, resolveDefinition, type StrategyDefinition } from "
  *
  * Every round trip goes through `accountForTrade`, which returns gross, costs
  * and net as one value. There is no way to get a gross figure out of this
- * engine, and no flag that would produce one (`x-wealth-product.md` §5.3).
+ * engine, and no flag that would produce one (`CLAUDE.md` §8.3).
  */
 
 /**
@@ -420,7 +420,7 @@ export function computeMetrics(input: {
 
   const finalEquity = equityCurve.at(-1)?.equityPaise ?? initialCapitalPaise;
 
-  // Net, and only net. §5.3 forbids a code path that yields a gross-return
+  // Net, and only net. §8.3 forbids a code path that yields a gross-return
   // figure, so there is no gross counterpart to this number anywhere.
   const netReturnPercent = percent(finalEquity - initialCapitalPaise, initialCapitalPaise);
 

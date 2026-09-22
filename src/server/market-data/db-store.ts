@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { db } from "../../db";
 import { dailyBars, instruments } from "../../db/schema/market-data";
 import { priceFromString } from "../../domain/money";
-import { PLACEHOLDER_CALENDAR_2026 } from "../../domain/session";
+import { NSE_CALENDAR } from "../../domain/session";
 import { toSymbol } from "../../domain/symbol";
 import { endOfDaySource, type BarStore } from "./eod-source";
 import { UPSTOX_DAILY_ADJUSTMENT, UPSTOX_SOURCE } from "./upstox";
@@ -90,7 +90,7 @@ export async function liveEndOfDaySource(options?: { validateOnRead?: boolean })
     // moment anything does session arithmetic on these dates, which is why the
     // real NSE circular is a prerequisite for the forward-test engine, not for
     // this layer.
-    calendar: PLACEHOLDER_CALENDAR_2026,
+    calendar: NSE_CALENDAR,
     adjustment: UPSTOX_DAILY_ADJUSTMENT,
     vintage: newest.vintage,
     name: UPSTOX_SOURCE,

@@ -5,7 +5,7 @@ import type { Symbol_ } from "./symbol";
 /**
  * Where price history comes from.
  *
- * `x-wealth-product.md` §9 blocks on an unresolved legal question: whether a
+ * `CLAUDE.md` §11 blocks on an unresolved legal question: whether a
  * platform serving registered RAs may use real-time price data at all. The
  * instruction that follows from it is the reason this file exists —
  *
@@ -23,7 +23,7 @@ import type { Symbol_ } from "./symbol";
  *
  * Bars carry `PriceTicks` — fixed-precision integers at four decimal places,
  * the same representation as the `numeric(18,4)` columns. No floats touch a
- * price on the way in (`x-wealth-product.md` §10).
+ * price on the way in (`CLAUDE.md` §12).
  *
  * ## Reading is asynchronous even though the fixture is not
  *
@@ -60,7 +60,7 @@ export type Bar = {
  * as a catastrophic session that never happened.
  *
  * `UNADJUSTED` is deliberately expressible rather than forbidden. Some vendors
- * sell raw series, and `x-wealth-product.md` §10 permits using them provided
+ * sell raw series, and `CLAUDE.md` §12 permits using them provided
  * the run says so: "Backtests must use adjusted data or explicitly document
  * that they don't." This is that documentation, and it travels with the result.
  */
@@ -98,7 +98,7 @@ export type Instrument = {
   readonly symbol: Symbol_;
   readonly name: string;
   readonly kind: InstrumentKind;
-  /** 1 for cash equities; derivatives trade in lots (`x-wealth-product.md` §10). */
+  /** 1 for cash equities; derivatives trade in lots (`CLAUDE.md` §12). */
   readonly lotSize: number;
   /** Smallest permitted price increment — ₹0.05 on most NSE equities. */
   readonly tickSize: PriceTicks;

@@ -76,7 +76,7 @@ EXCEPTION WHEN others THEN
 END;
 $$;
 
-\echo '--- append-only (x-wealth-product.md 5.1) ---'
+\echo '--- append-only (CLAUDE-v1-ARCHIVED-advisor-marketplace.md 5.1) ---'
 SELECT pg_temp.must_reject('UPDATE strategy_versions',
   $$update strategy_versions set definition='{"x":1}'::jsonb where id='c0000000-0000-0000-0000-0000000000ff'$$);
 SELECT pg_temp.must_reject('DELETE strategy_versions',

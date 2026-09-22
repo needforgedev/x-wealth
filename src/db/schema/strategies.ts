@@ -40,7 +40,7 @@ export const strategies = pgTable(
 );
 
 /**
- * APPEND ONLY (`x-wealth-product.md` §5.1).
+ * APPEND ONLY (`CLAUDE.md` §8.1).
  *
  * No UPDATE, no DELETE, no soft-delete. Corrections happen by appending a new
  * version that points at its parent. Enforced by trigger and by revoked grants
@@ -56,7 +56,7 @@ export const strategyVersions = pgTable(
 
     versionNo: integer("version_no").notNull(),
 
-    /** Structured data, never code (`x-wealth-product.md` §6). */
+    /** Structured data, never code (`CLAUDE.md` §7.3). */
     definition: jsonb("definition").$type<StrategyDefinition>().notNull(),
 
     /**

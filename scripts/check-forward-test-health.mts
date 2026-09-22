@@ -50,7 +50,7 @@ config({ path: ".env.local" });
  * catches a genuine outage on its second evening.
  *
  * Measured in calendar days rather than trading sessions on purpose. Sessions
- * would need the holiday calendar, which is still `PLACEHOLDER_CALENDAR_2026`
+ * would need the holiday calendar, which is still `NSE_CALENDAR`
  * (W1-13) — and a staleness alarm that depends on the thing most likely to be
  * wrong is not an alarm.
  */

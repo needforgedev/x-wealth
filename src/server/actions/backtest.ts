@@ -23,12 +23,12 @@ import type { ActionResult } from "@/server/actions/auth";
 /**
  * Running a backtest, and recording it permanently.
  *
- * `backtest_runs` is append-only (`x-wealth-product.md` §5.1). A run cannot be
+ * `backtest_runs` is append-only (`CLAUDE.md` §8.1). A run cannot be
  * deleted, re-run in place, or hidden — which is the point. An advisor who
  * dislikes a result appends another run; the first one stays, and the iteration
  * ledger shows both.
  *
- * The advisor does not choose a cost model. §5.3 is explicit that costs are
+ * The advisor does not choose a cost model. §8.3 is explicit that costs are
  * structural and that there must be no code path producing a gross figure, so
  * the model is applied by the platform rather than offered as a setting. The
  * only parameter is the slippage assumption, and it is recorded in the run.

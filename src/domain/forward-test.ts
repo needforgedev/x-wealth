@@ -14,7 +14,7 @@ import type { StrategyDefinition } from "./strategy";
 /**
  * A forward test, advanced one session at a time.
  *
- * `x-wealth-product.md` §5.2 and `plan.md` W6. This is the differentiator: a
+ * `CLAUDE.md` §8.2 and `plan.md` W6. This is the differentiator: a
  * backtest is a claim about data that already existed when the rules were
  * written, a forward test is a commitment made before the data exists.
  *
@@ -54,7 +54,7 @@ export class ForwardTestError extends Error {
 }
 
 /**
- * Placeholder from §9 blocker B-2, which wants statistical justification.
+ * Placeholder from §11 blocker B-2, which wants statistical justification.
  *
  * Sixty sessions is roughly a quarter, which is long enough that a strategy
  * cannot get through it on one lucky trade. That is a reason, not a
@@ -149,7 +149,7 @@ export type OpenMark = {
  *
  * For a backtest that never matters: the final session force-closes everything,
  * so the last point has both legs paid. For a *running* forward test it matters
- * on every single day, and §5.3 is unambiguous that no code path here may
+ * on every single day, and §8.3 is unambiguous that no code path here may
  * produce a figure that has not paid its costs. `netReturnPercent` below is
  * therefore computed net of the outstanding exit charges, and it is the only
  * return figure this type exposes.
@@ -503,7 +503,7 @@ export type LedgerSummary = {
  * walk the sessions that printed after the advisor stopped, and report trades
  * from a window they had already withdrawn from. What actually happened before
  * they stopped is what `paper_trades` holds, so that is what gets shown
- * (`x-wealth-product.md` §5.2 — abandonment is a result, not a gap).
+ * (`CLAUDE.md` §8.2 — abandonment is a result, not a gap).
  */
 export function summariseLedger(rows: readonly LedgerRow[]): LedgerSummary {
   let closed = 0;

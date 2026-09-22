@@ -4,7 +4,7 @@ import { isSymbol } from "./symbol";
 /**
  * Strategy definitions.
  *
- * `x-wealth-product.md` §6: a strategy is **structured data, never code**. That
+ * `CLAUDE.md` §7.3: a strategy is **structured data, never code**. That
  * is not a stylistic preference — a definition has to be replayable by the
  * backtest and forward-test engines years after it was authored, comparable
  * across versions, and inspectable by a reviewer who is not a programmer. Code
@@ -216,7 +216,7 @@ export type ValidationIssue = { field: string; message: string };
  * about the database on a particular day.
  *
  * Passing the catalogue in, rather than importing it, keeps this module pure
- * and testable without a connection. `x-wealth-product.md` §6 wants a
+ * and testable without a connection. `CLAUDE.md` §7.3 wants a
  * definition to be replayable years later; a validator that reached for a live
  * table could not be reasoned about at all.
  */
@@ -495,7 +495,7 @@ export function validateStrategyDefinition(
   }
 
   if (!Number.isInteger(definition.initialCapitalPaise)) {
-    // Money is an integer count of paise — never a float (spec §10).
+    // Money is an integer count of paise — never a float (`CLAUDE.md` §12).
     issues.push({ field: "initialCapitalPaise", message: "Capital must be a whole number of paise." });
   }
 

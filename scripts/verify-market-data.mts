@@ -17,7 +17,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 const { conformanceViolations } = await import("@/domain/market-data-conformance");
-const { PLACEHOLDER_CALENDAR_2026 } = await import("@/domain/session");
+const { NSE_CALENDAR } = await import("@/domain/session");
 const { isTradeable } = await import("@/domain/market-data");
 const { formatPrice } = await import("@/domain/money");
 const { liveEndOfDaySource } = await import("@/server/market-data/db-store");
@@ -43,7 +43,7 @@ let failed = 0;
 for (const instrument of instruments) {
   const violations = await conformanceViolations(source, {
     symbol: instrument.symbol,
-    calendar: PLACEHOLDER_CALENDAR_2026,
+    calendar: NSE_CALENDAR,
   });
 
   if (violations.length === 0) {

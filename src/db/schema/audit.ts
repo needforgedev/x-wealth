@@ -11,7 +11,7 @@ import { authUsers } from "./auth";
  *
  * PAN, phone, DOB and document contents must never appear in `before` or
  * `after` — the same rule as logs, error messages and analytics events
- * (`x-wealth-product.md` §10). Record that a field changed, not its value.
+ * (`CLAUDE.md` §12). Record that a field changed, not its value.
  */
 export const auditLog = pgTable(
   "audit_log",

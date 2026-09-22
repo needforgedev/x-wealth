@@ -1,9 +1,44 @@
-# X-Wealth — Project Context
+# X-Wealth — Project Context *(v1 — ARCHIVED, not the source of truth)*
 
-> Read this fully before writing any code. This file explains what we are building, the
-> domain it operates in, and a set of hard invariants that are non-negotiable.
-> Several of those invariants will look like missing features or incomplete CRUD.
-> They are intentional. Do not "fix" them.
+> ## ⚠️ This document describes a product that was abandoned on 26 August 2026.
+>
+> It specified a **two-sided advisor/investor marketplace**: SEBI-registered Research
+> Analysts publishing strategies, retail investors subscribing to groups, the platform
+> taking a cut. That direction is dead — see `CLAUDE.md` §2, which explains why it is
+> legally prohibited rather than merely deprioritised.
+>
+> **`CLAUDE.md` is the source of truth.** Read that instead. This file is kept for one
+> reason: it is the only record of the v1 specification, and code and migrations written
+> before the pivot cite its section numbers. Deleting it would orphan them.
+>
+> ### If you arrived here from a citation
+>
+> Most §5.x invariants survived the pivot and moved into `CLAUDE.md` §8:
+>
+> | v1 | v2 |
+> |---|---|
+> | §5.1 append-only history | `CLAUDE.md` §8.1 |
+> | §5.2 parameter immutability | `CLAUDE.md` §8.2 |
+> | §5.3 costs never optional | `CLAUDE.md` §8.3 |
+> | §5.6 no performance claims | `CLAUDE.md` §8.7 |
+> | §5.7 AI interactions logged | `CLAUDE.md` §8.6 |
+> | §5.8 no money or custody | `CLAUDE.md` §8.11 |
+> | §6 data model | `CLAUDE.md` §9 |
+> | §8 do NOT build | `CLAUDE.md` §10 |
+> | §9 blocked decisions | `CLAUDE.md` §11 |
+> | §10 technical notes | `CLAUDE.md` §12 |
+>
+> **§5.4 (registration gate) and §5.5 (signals immutable once published) have no v2
+> equivalent** — there is no registration to gate and nothing is published. Citations to
+> those two still point here, correctly.
+>
+> ### Migrations still cite the old filename
+>
+> `drizzle/0001`, `0002` and `0006` name this document as `x-wealth-product.md`. They were
+> **deliberately not updated**: shipped migrations are content-hashed in
+> `drizzle.__drizzle_migrations`, so editing one makes its recorded hash a lie. A citation
+> inside a migration is correctly dated by the migration itself. `x-wealth-product.md` is
+> this file.
 
 ---
 

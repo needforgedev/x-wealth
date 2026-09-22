@@ -2,7 +2,7 @@
  * Exchange-qualified instrument symbols.
  *
  * `NSE:RELIANCE` and `BSE:RELIANCE` are different instruments and can trade at
- * different prices (`x-wealth-product.md` §10). A bare `RELIANCE` is never
+ * different prices (`CLAUDE.md` §12). A bare `RELIANCE` is never
  * valid anywhere in this system.
  *
  * The pattern below is duplicated in SQL as a CHECK constraint on

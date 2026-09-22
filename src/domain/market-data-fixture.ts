@@ -27,7 +27,7 @@ import { toSymbol, type Symbol_ } from "./symbol";
  * instrument that makes that gate passable.
  *
  * It also has no vendor, no cost, no network call and no dependency on the
- * unresolved legal question in `x-wealth-product.md` §9, so the engine can be
+ * unresolved legal question in `CLAUDE.md` §11, so the engine can be
  * built and finished before any of that is settled.
  *
  * Prices are written as rupee decimal strings — `"345.50"` — and parsed by

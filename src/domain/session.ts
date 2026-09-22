@@ -1,7 +1,7 @@
 /**
  * Trading sessions, in IST.
  *
- * `x-wealth-product.md` §10: the market runs 09:15–15:30 IST, Monday to Friday,
+ * `CLAUDE.md` §12: the market runs 09:15–15:30 IST, Monday to Friday,
  * excluding exchange holidays. **There is no 24-hour market**, and every piece
  * of date arithmetic in the forward-test engine has to respect that or it will
  * fill trades on days the exchange was shut.
@@ -53,37 +53,153 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 
 /**
- * ⚠️ INCOMPLETE — three fixed-date national holidays only.
+ * The years this calendar actually covers.
  *
- * The real NSE list has ~15 entries a year, most of them lunar-calendar
- * festivals whose dates are published annually and cannot be derived. Replace
- * this with the official circular before any backtest or forward test is run
- * for real — see W3-05 and blocker B-6. It exists so the code has something to
- * exercise, and is named so nobody mistakes it for authoritative.
+ * Exported because the gap matters: outside this range every holiday reads as
+ * an ordinary trading day, and session arithmetic is silently wrong rather than
+ * loudly absent. Daily bars go back to 2000, so a backtest over 2015 is using a
+ * weekday rule and nothing more. Extending it is a matter of adding the years
+ * from the circular — see the note on `NSE_CALENDAR`.
  */
-export const PLACEHOLDER_CALENDAR_2026: TradingCalendar = {
-  name: "placeholder-2026-incomplete",
+export const NSE_CALENDAR_COVERS = { from: "2023-01-01", to: "2026-12-31" } as const;
+
+/**
+ * NSE trading holidays, 2023–2026.
+ *
+ * Sourced from the exchange holiday circular as republished by Zerodha, Groww
+ * and CalendarLabs, cross-checked across sources per year — 2026 agreed across
+ * three. This is data, not logic: it changes every year, most of it is
+ * lunar-calendar festivals whose dates cannot be derived, and the only correct
+ * way to extend it is to read the next circular.
+ *
+ * ## Diwali Laxmi Pujan is a session, not a holiday
+ *
+ * The trap this calendar is most likely to spring. Laxmi Pujan is a gazetted
+ * trading holiday — normal trading does not open — but the exchange runs the
+ * ~1-hour Muhurat session that evening, so **prices print and a daily bar
+ * exists**. Listing it as a holiday and stopping there would make
+ * `assertValidSeries` reject a genuine bar on four dates in this range.
+ *
+ * Each one is therefore listed in `holidays` *and* in `specialSessions`, which
+ * wins. That is deliberate rather than redundant: the pair records both facts —
+ * the exchange was closed for normal trading, and it nonetheless traded — where
+ * omitting it from `holidays` would record only the second.
+ *
+ * ## What is verified against bars and what is not
+ *
+ * The six weekend sessions below were found in Upstox's own series for the
+ * loaded universe: the exchange printed prices, so the session happened. The
+ * holiday dates and the three weekday Muhurat dates are documentary — taken
+ * from the circular, not yet confirmed against bars, because the database has
+ * been unreachable since early September. **Re-run `npm run load-market-data`
+ * once it is back**: `assertValidSeries` will reject any bar landing on a date
+ * this file calls closed, which is exactly the check that would catch an error
+ * here.
+ */
+export const NSE_CALENDAR: TradingCalendar = {
+  name: "nse-2023-2026",
   holidays: new Set<IsoDate>([
+    // --- 2023 ---------------------------------------------------------------
+    "2023-01-26", // Republic Day
+    "2023-03-07", // Holi
+    "2023-03-30", // Ram Navami
+    "2023-04-04", // Mahavir Jayanti
+    "2023-04-07", // Good Friday
+    "2023-04-14", // Dr. Baba Saheb Ambedkar Jayanti
+    "2023-04-21", // Id-ul-Fitr
+    "2023-05-01", // Maharashtra Day
+    "2023-06-28", // Bakri Id
+    "2023-08-15", // Independence Day
+    "2023-09-19", // Ganesh Chaturthi
+    "2023-10-02", // Mahatma Gandhi Jayanti
+    "2023-10-24", // Dasara
+    "2023-11-12", // Diwali-Laxmi Pujan — Muhurat session, see above
+    "2023-11-14", // Diwali-Balipratipada
+    "2023-11-27", // Guru Nanak Jayanti
+    "2023-12-25", // Christmas
+
+    // --- 2024 ---------------------------------------------------------------
+    "2024-01-26", // Republic Day
+    "2024-03-08", // Maha Shivaratri
+    "2024-03-25", // Holi
+    "2024-03-29", // Good Friday
+    "2024-04-10", // Id-ul-Fitr
+    "2024-04-14", // Dr. Baba Saheb Ambedkar Jayanti
+    "2024-04-17", // Ram Navami
+    "2024-04-21", // Mahavir Jayanti
+    "2024-05-01", // Maharashtra Day
+    "2024-06-17", // Bakri Id
+    "2024-07-17", // Muharram
+    "2024-08-15", // Independence Day
+    "2024-09-07", // Ganesh Chaturthi
+    "2024-10-02", // Mahatma Gandhi Jayanti
+    "2024-10-13", // Dasara
+    "2024-11-01", // Diwali-Laxmi Pujan — Muhurat session, see above
+    "2024-11-02", // Diwali-Balipratipada
+    "2024-11-15", // Guru Nanak Jayanti
+    "2024-12-25", // Christmas
+
+    // --- 2025 ---------------------------------------------------------------
+    "2025-01-26", // Republic Day
+    "2025-02-26", // Maha Shivaratri
+    "2025-03-14", // Holi
+    "2025-03-31", // Id-ul-Fitr
+    "2025-04-06", // Ram Navami
+    "2025-04-10", // Mahavir Jayanti
+    "2025-04-14", // Dr. Baba Saheb Ambedkar Jayanti
+    "2025-04-18", // Good Friday
+    "2025-05-01", // Maharashtra Day
+    "2025-06-07", // Bakri Id
+    "2025-07-06", // Muharram
+    "2025-08-15", // Independence Day
+    "2025-08-27", // Ganesh Chaturthi
+    "2025-10-02", // Dasara and Mahatma Gandhi Jayanti
+    "2025-10-21", // Diwali-Laxmi Pujan — Muhurat session, see above
+    "2025-10-22", // Diwali-Balipratipada
+    "2025-11-05", // Guru Nanak Jayanti
+    "2025-12-25", // Christmas
+
+    // --- 2026 ---------------------------------------------------------------
+    // The election holiday is late-announced and state-specific: two of the
+    // three sources carry it, the third predates the announcement. Kept,
+    // because a spurious holiday costs a session and a missing one corrupts
+    // the count in the direction that flatters.
+    "2026-01-15", // Municipal Corporation General Elections, Maharashtra
     "2026-01-26", // Republic Day
-    "2026-08-15", // Independence Day
-    "2026-10-02", // Gandhi Jayanti
+    "2026-03-03", // Holi
+    "2026-03-26", // Shri Ram Navami
+    "2026-03-31", // Shri Mahavir Jayanti
+    "2026-04-03", // Good Friday
+    "2026-04-14", // Dr. Baba Saheb Ambedkar Jayanti
+    "2026-05-01", // Maharashtra Day
+    "2026-05-28", // Bakri Id
+    "2026-06-26", // Muharram
+    "2026-09-14", // Ganesh Chaturthi
+    "2026-10-02", // Mahatma Gandhi Jayanti
+    "2026-10-20", // Dussehra
+    "2026-11-08", // Diwali-Laxmi Pujan — Muhurat session, see above
+    "2026-11-10", // Diwali-Balipratipada
+    "2026-11-24", // Prakash Gurpurb Sri Guru Nanak Dev
+    "2026-12-25", // Christmas
   ]),
 
   /**
-   * These, unlike the holidays above, are not guesses.
+   * Dates the exchange traded that the general rules would call closed.
    *
-   * Every one was observed as a real bar in Upstox's series for the loaded
-   * universe — the exchange printed prices, so the session happened. Kept as
-   * evidence rather than as a placeholder; the official circular will add to
-   * this list, not correct it.
+   * The six weekend entries were each observed as a real bar in Upstox's series
+   * for the loaded universe. The four Muhurat entries are from the circular and
+   * override their own holiday listing above.
    */
   specialSessions: new Set<IsoDate>([
     "2023-11-12", // Sunday — Diwali Muhurat trading
     "2024-01-20", // Saturday — special live session, disaster-recovery test
     "2024-03-02", // Saturday — special live session, disaster-recovery test
     "2024-05-18", // Saturday — special live session, disaster-recovery test
+    "2024-11-01", // Friday — Diwali Muhurat trading
     "2025-02-01", // Saturday — Union Budget
+    "2025-10-21", // Tuesday — Diwali Muhurat trading
     "2026-02-01", // Sunday — Union Budget
+    "2026-11-08", // Sunday — Diwali Muhurat trading
   ]),
 };
 

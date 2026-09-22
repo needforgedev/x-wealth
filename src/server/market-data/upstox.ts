@@ -61,7 +61,7 @@ type RawCandle = [string, number, number, number, number, number, number];
 /**
  * A JSON number back to an exact decimal string, then to ticks.
  *
- * `x-wealth-product.md` §10 says no float ever touches a price, and `money.ts`
+ * `CLAUDE.md` §12 says no float ever touches a price, and `money.ts`
  * enforces that by only parsing strings. But JSON has no decimal type — by the
  * time `JSON.parse` hands us 1309.55 it is already a double, and the value we
  * want is unrecoverable from any arithmetic we could do on it.

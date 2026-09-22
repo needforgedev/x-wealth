@@ -11,7 +11,7 @@ import { runBacktestForVersion } from "@/server/actions/backtest";
  * Every press appends a run. There is no "re-run" that replaces the previous
  * result and no way to discard one — `backtest_runs` is append-only, and an
  * advisor who dislikes a number gets another row, not a rewrite
- * (`x-wealth-product.md` §5.1).
+ * (`CLAUDE.md` §8.1).
  */
 export function RunBacktest({ versionId, runCount }: { versionId: string; runCount: number }) {
   const router = useRouter();

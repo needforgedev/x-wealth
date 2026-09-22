@@ -13,7 +13,7 @@ import {
 import { conformanceViolations } from "./market-data-conformance";
 import { NSE_EQUITY_TICK, fixtureSource, flatBars, ohlcBars } from "./market-data-fixture";
 import { priceFromString, priceTicks } from "./money";
-import { PLACEHOLDER_CALENDAR_2026, WEEKENDS_ONLY } from "./session";
+import { NSE_CALENDAR, WEEKENDS_ONLY } from "./session";
 import { toSymbol } from "./symbol";
 
 const RELIANCE = toSymbol("NSE:RELIANCE");
@@ -94,7 +94,7 @@ describe("series validation", () => {
   it("sees holidays the calendar knows about", () => {
     const republicDay = { ...good[0], date: "2026-01-26" };
     expect(seriesIssues([republicDay], WEEKENDS_ONLY)).toEqual([]);
-    expect(seriesIssues([republicDay], PLACEHOLDER_CALENDAR_2026).join(" ")).toContain(
+    expect(seriesIssues([republicDay], NSE_CALENDAR).join(" ")).toContain(
       "not a trading session",
     );
   });
@@ -130,7 +130,7 @@ describe("fixture builders", () => {
     const bars = flatBars({
       from: "2026-01-23", // Friday
       closes: ["1", "2"],
-      calendar: PLACEHOLDER_CALENDAR_2026,
+      calendar: NSE_CALENDAR,
     });
     // Sat 24, Sun 25 and Republic Day on Mon 26 are all skipped.
     expect(bars.map((b) => b.date)).toEqual(["2026-01-23", "2026-01-27"]);

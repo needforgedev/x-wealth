@@ -3,7 +3,7 @@
  *
  *   npm run verify-freeze
  *
- * `x-wealth-product.md` §5.2 requires the freeze to be enforced "at the DB
+ * `CLAUDE.md` §8.2 requires the freeze to be enforced "at the DB
  * level (constraint or trigger), not in application logic". A test that goes
  * through a server action proves nothing about that — it proves the server
  * action behaves, which was never in doubt. So this connects with raw SQL and
@@ -290,7 +290,7 @@ try {
   console.log(`\nrolled back — nothing written to the append-only tables`);
   console.log(
     allowed === 0
-      ? `✓ ${refused} of ${ATTACKS.length} attacks refused by the database. §5.2 is enforced where it claims to be.`
+      ? `✓ ${refused} of ${ATTACKS.length} attacks refused by the database. §8.2 is enforced where it claims to be.`
       : `✗ ${allowed} attack(s) succeeded. The freeze is not enforced at the database level.`,
   );
 } finally {

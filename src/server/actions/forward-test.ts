@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { forwardTests, strategies, strategyVersions } from "@/db/schema";
 import { ZERO_BROKERAGE, nseEquityDelivery } from "@/domain/costs";
 import { DEFAULT_PLANNED_SESSIONS, SESSION_WINDOW } from "@/domain/forward-test";
-import { PLACEHOLDER_CALENDAR_2026, addSessions } from "@/domain/session";
+import { NSE_CALENDAR, addSessions } from "@/domain/session";
 import {
   resolveDefinition,
   validateStrategyDefinition,
@@ -22,7 +22,7 @@ import type { ActionResult } from "@/server/actions/auth";
 /**
  * Starting and stopping a forward test.
  *
- * This is `x-wealth-product.md` §5.2 at the application boundary. The database
+ * This is `CLAUDE.md` §8.2 at the application boundary. The database
  * already refuses to let a RUNNING test be edited — `npm run verify-freeze`
  * proves that with fourteen raw-SQL attacks — so nothing here is load-bearing
  * for the invariant. What these actions do is make sure the row that gets
@@ -118,8 +118,8 @@ export async function startForwardTest(input: {
       return { ok: false, error: "No price history is loaded for that instrument." };
     }
 
-    const opensOn = addSessions(latestBar.date, 1, PLACEHOLDER_CALENDAR_2026);
-    const estimatedEnd = addSessions(opensOn, plannedSessions - 1, PLACEHOLDER_CALENDAR_2026);
+    const opensOn = addSessions(latestBar.date, 1, NSE_CALENDAR);
+    const estimatedEnd = addSessions(opensOn, plannedSessions - 1, NSE_CALENDAR);
 
     const forwardTestId = await db().transaction(async (tx) => {
       const [draft] = await tx
@@ -163,7 +163,7 @@ export async function startForwardTest(input: {
  *
  * Abandonment is a first-class outcome, not a failure state to be tidied away.
  * It stays on the advisor's public record with the reason they gave — that is
- * the denominator that makes a completed test mean anything (§5.2, PRD §5.6).
+ * the denominator that makes a completed test mean anything (§8.2, PRD §5.6).
  *
  * The reason is required and the advisor is told it will be published, because
  * a reason nobody sees is not a reason, it is a note to self.

@@ -9,7 +9,7 @@ import type { IndicatorKind } from "./strategy";
  *
  * ## Floats are correct here, and only here
  *
- * `x-wealth-product.md` §10 forbids floats for currency, and `money.ts` holds
+ * `CLAUDE.md` §12 forbids floats for currency, and `money.ts` holds
  * that line. An indicator is not currency — it is an analytical value derived
  * from prices, and EMA and RSI are defined by recurrences involving division
  * that have no exact integer form. Rounding them to four decimal places to

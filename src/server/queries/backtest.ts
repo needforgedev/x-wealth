@@ -52,7 +52,7 @@ export async function loadRunForUser(runId: string, userId: string) {
  * No filter, no "latest only", no way to hide one. `backtest_runs` is
  * append-only and this is the read that makes that visible — an advisor who
  * dislikes a result appends another run, and both stay on the record
- * (`x-wealth-product.md` §5.1, PRD §5.6).
+ * (`CLAUDE.md` §8.1, PRD §5.6).
  */
 export async function listRunsForStrategy(strategyId: string, userId: string) {
   return db()

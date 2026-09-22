@@ -1,7 +1,7 @@
 /**
  * Money and prices.
  *
- * `x-wealth-product.md` §10: money is an integer count of paise, prices are
+ * `CLAUDE.md` §12: money is an integer count of paise, prices are
  * fixed-precision decimals, and **no float ever touches either**. This module
  * is the only place that is allowed to convert between a human decimal string
  * and the internal representation.

@@ -22,7 +22,7 @@ import {
  *
  * No artboard exists for this screen, so it is assembled from the same
  * primitives and tokens as the rest of the app. The output is a structured
- * definition — never code (`x-wealth-product.md` §6).
+ * definition — never code (`CLAUDE.md` §7.3).
  */
 
 /**
