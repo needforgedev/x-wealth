@@ -83,10 +83,15 @@ renumbered, so they can be referenced in commits and PRs.
 **Honest summary: the engine is further along than the last update recorded, and
 the surface around it is now the wrong product.**
 
-327 tests across 18 files, all green. Nine migrations applied to a live Supabase
-project. A backtest engine and a forward-test engine that both run against real
-Upstox bars. And a front end built almost entirely for a marketplace that v2
-prohibits.
+367 tests across 20 files, all green. Fifteen migrations. A backtest engine, a
+forward-test engine and an adversarial suite that all run against real Upstox
+bars, and an iteration ledger over the top of them.
+
+⚠️ **The hosted Supabase project no longer resolves** (`oejvxrrevfdotszvrqaz`
+returns NXDOMAIN; the pooler reports the tenant as unknown). Everything that
+needs a database is stalled until it is restored or recreated, and the evening
+scheduler has been failing every weekday since. See `W1-20` — point-in-time
+recovery was never set up, which is the gap this walked into.
 
 ### Done and verified
 
@@ -102,6 +107,8 @@ prohibits.
 - [x] **D-11** 7,514 lines of tested domain logic in `src/domain/`
 - [x] **D-14** **Adversarial suite** — `src/domain/{adversarial,regime}.ts` + migration `0014`. Walk-forward, parameter sensitivity, regime slicing, trade-order Monte Carlo and cost sensitivity, ranked into an append-only report with no score anywhere. 32 tests, plus `npm run verify-adversarial` against live bars
 - [x] **D-13** **AI interaction log** — `ai_interactions` (migration `0013`) plus `src/server/ai/`: the provider interface, a stub, and `runInteraction`, which does not return model output until the row is committed. 12 tests, invariants proven under `service_role`. **No provider is wired — see W15-01**
+- [x] **D-15** **Iteration ledger** — `/ledger`, every window this account has started across every strategy, no filter and no parameter that could become one. `npm run verify-ledger`, 12 checks
+- [x] **D-16** **Single-persona identity** — migrations `0009`/`0010`, 22 tables → 12, `advisors` + `investors` → one `users` table, routes re-homed to top level
 - [x] **D-12** **Evening scheduler** — `.github/workflows/forward-tests.yml` (load → advance → health check, weekdays 16:45 IST) plus `npm run check-forward-tests`, which catches the case the jobs themselves cannot: succeeded, and nothing happened
 
 ### Not built
@@ -111,16 +118,13 @@ prohibits.
 | **AI — the model half** | **Zero.** No provider dependency, no key, no billing (`AD-11`, W15-01). `resolveProvider()` returns a stub whose `metadata.live` is false |
 | AI — the logging half | **Built and verified** (W15-02, W15-03). `ai_interactions` is live; `runInteraction` is the only route to a provider and records before it returns |
 | Hypothesis workbench | Not started. New in v2 |
-| Adversarial backtest suite | Not started. No walk-forward, sensitivity, regime slice or Monte Carlo |
 | Annotation layer | Not started. New in v2 |
 | Event awareness | Not started. New in v2 |
 | Portfolio risk + circuit breakers | Not started. New in v2 |
 | Trigger proximity | Not started. New in v2 |
 | Execution gap analysis | Not started. New in v2 — **the most differentiated module** |
 | Review cadence / decay alerts | Not started. New in v2 |
-| Iteration ledger | Partial — `/advisor/strategies/[id]` is a first form of it |
 | Broker integration | Not started. Stage 2 |
-| Single-user identity model | Not started. Schema and routes are still two-persona |
 | Billing | None |
 
 ### The gap, stated plainly
@@ -443,7 +447,7 @@ Unchanged by the pivot. All nine still apply.
 - [x] **W5-14** **Done 28 Aug 2026.** Gross sits directly under net on the results screen, never behind a toggle, with the rupee total the charges took across the run. The gross figure is this run's own trades with their charges added back, **not a separate cost-free simulation** — a costless run would have funded different quantities (`affordableQty` pays charges out of cash) and the two would not be comparable. §8.3 is satisfied by the pair; neither number alone satisfies it, and there is still no code path that yields gross on its own
 
 - [x] **W5-15** **New — done 28 Aug 2026. The engine did not read `targetPercent`.** It was validated with bounds, carried through `resolveDefinition`, required as a key by the `0012` CHECK, and named by §7.3 as half of the third mandatory component — and no line of `backtest.ts`, `session-step.ts` or `backtest-signals.ts` ever looked at it. The only exits the engine could produce were `SIGNAL`, `STOP_LOSS` and `END_OF_PERIOD`. **Latent, not live**: no form exposed the field and 0 of 6 stored versions set one, so no wrong number was ever produced. What made it urgent is what would have pulled the trigger — `W4-12` compiles plain English, and *"take profit at 20%"* is about the most natural sentence a trader says. Targets now fill as resting orders, round **up** so the rounding costs the strategy rather than favours it, and fill at the open on a favourable gap — modelling the gap down through a stop but not the gap up through a target is a thumb on the scale, not conservatism
-- [ ] **W5-16** **New.** CI runs typecheck, lint, tests, build and `verify_invariants.sql` — and **none of the four `verify-*` scripts**. That is why two of them sat broken for a day without anyone noticing (see the changelog). They need a seeded database and, for two of them, loaded bars, so this is a fixtures problem rather than a one-line workflow edit. Until it is done, the freeze proof is only as current as the last time someone ran it by hand
+- [~] **W5-16** **Two of the four wired, 22 Sep 2026.** `verify-freeze` and `verify-ledger` now run in CI's `invariants` job against its Postgres container, on every push. Two things were keeping them out, and neither was the fixtures problem this item assumed. **`verify-freeze` hardcoded `ssl: "require"`**, which a container does not speak — it died with `ECONNRESET` before landing a single attack; TLS is now decided from the host, so there is no flag anyone can set or forget to unset that would drop it on the way to the real database. **Both required a pre-existing user row and exited 1 without one**, which is precisely what confined them to a populated database and therefore to being run by hand. Each now seeds a fixture account *inside the transaction it already rolled back*, so a live database is still never written to, and an existing account is still preferred where there is one. **`verify-standing` and `verify-adversarial` remain manual** — they need loaded bars and a live vendor token, which is a genuine fixtures problem and stays open under this ID. Proven by reproducing the whole CI job against a throwaway Postgres 17 cluster: migrations, invariants, invariants under `service_role`, soft-delete guard, then both scripts — 14 of 14 attacks refused and 12 of 12 ledger checks passed on a database that started empty, and again on one that did not
 - [ ] **W5-17** **New.** 1-minute bars in the data layer, so `W5-13` can resolve an ambiguous session rather than assuming the worst of it. Upstox has 1-minute history since Jan 2022 at exactly 375 bars per session, already verified (W3-06). Needs a table, a loader path and a `MarketDataSource` method — the engine seam is already there and takes the second `FillModel` value unchanged
 
 > *A subtly wrong backtest produces plausible numbers that are silently false,
@@ -783,6 +787,7 @@ before more work lands on a schema with the wrong shape.
 
 | Date | Change |
 |---|---|
+| **22 Sep 2026** | **The freeze proof runs in CI (W5-16, two of four).** Until now CI ran typecheck, lint, tests, build and `verify_invariants.sql` and **none** of the `verify-*` scripts — which is why two of them sat broken for a day in August, and why the parameter freeze, the single most load-bearing invariant in the product, was only ever as proven as the last time somebody remembered to run it by hand against the hosted database. That became acute rather than theoretical when the hosted database stopped resolving: for a fortnight there was **no way to prove the freeze at all**. `verify-freeze` and `verify-ledger` now run on every push against CI's own Postgres container. Two blockers, neither of them the fixtures problem this was filed as: `ssl: "require"` was hardcoded and a container does not speak TLS, so it died on `ECONNRESET` before landing an attack; and both scripts required a pre-existing user row, which is exactly what tied them to a populated database. TLS is now decided from the host rather than an env var — no flag can drop it on the way to the real database — and each seeds its fixture account inside the transaction it already rolls back, so nothing is written either way and an existing account is still preferred. Verified by reproducing the entire CI job against a throwaway Postgres 17 cluster, on an empty database and a populated one: 14 of 14 attacks refused, 12 of 12 ledger checks passed. 367 tests. |
 | **28 Aug 2026** | **The iteration ledger (W8-01/02/05/06/07; W8-03 confirmed).** `/ledger` — every forward test this account has started, across every strategy, newest first, with no filter and no parameter that could become one. §7.14's counts lead the page because the denominator is the product: three completed windows mean one thing beside nine abandoned ones and something else entirely beside none. **The abandoned count is the same size and colour as the completed one**, and an abandoned row is not styled as an error — stopping a test that is not working is the product behaving correctly. No aggregate of any kind: no overall win rate, no total return, no best strategy, each of which is a §8.7 claim about a person. `W8-07`'s trap is closed by showing no figure for a running test at all. `npm run verify-ledger` is the W8-05 assertion and is deliberately an end-to-end read rather than a unit test, because what it guards is that no layer between the database and the screen drops an abandoned window. Verified rendering against a real account. 367 tests. |
 | **28 Aug 2026** | **The v1 screens that survived the teardown, audited route by route (W10-21/22/23).** Found by walking the app in a browser; none of it was visible to CI, because these files import no schema. **Five dead links**, the worst at the end of onboarding — a new account acknowledged risk and was pushed to `/investor/home`, deleted in W10-15, so every signup ended on a 404. **Sign-out did not sign out**: the sheet's button was `<Link href="/">`, so the session survived and any protected URL let you back in; both the `signOut` action and a `SignOutButton` had existed all along and been orphaned. **Six pages had no auth guard**, and the profile showed a hardcoded "Raj Bansal" to whoever was signed in. `/profile/edit` discarded everything typed; `/profile/password` was a form for a credential the product does not have. `/portfolio` was showing a fabricated ₹345,000 at 44% CAGR behind a "Via Signals" tab — §8.7, §10 and §8.5 in one screen, invisible to the lint rule because it was numbers rather than words. Every internal link now resolves to a route that exists, every page has a back affordance, and sign-out was verified end to end. 367 tests. |
 | **28 Aug 2026** | **Attack report UI (W18-09, W18-12).** `/backtests/[id]/attack`, with the entry point on the run page placed *above* the metrics — the report is what qualifies those figures, and a reader who has absorbed the return first has already formed the view it exists to interrogate. A run with no report says so rather than staying quiet, and attacks that ran without tripping are listed as having run, because an empty report and a broken suite look identical otherwise. Attacking is deliberate rather than automatic (~30 engine runs against §11.5's compute ceiling), and pressing again returns the existing report — the unique index closes the retry loop rather than the UI declining to offer it. **Verified end to end against a real recorded run**, not a fixture: 15 trades, four findings, one profitable window in four. |

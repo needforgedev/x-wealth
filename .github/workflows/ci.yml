@@ -53,6 +53,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
 
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -98,3 +103,23 @@ jobs:
 
       - name: No soft-delete columns on append-only tables
         run: psql -v ON_ERROR_STOP=1 -c 'SELECT assert_no_soft_delete_columns()'
+
+      # W5-16. Until this landed, CI ran typecheck, lint, tests, build and
+      # `verify_invariants.sql` — and none of the `verify-*` scripts. That is
+      # why two of them sat broken for a day in August without anyone noticing,
+      # and the freeze is the product: its proof was only ever as current as the
+      # last time somebody ran it by hand against the hosted database.
+      #
+      # These two need a database and nothing else. `verify-standing` and
+      # `verify-adversarial` also need loaded bars and a vendor token, so they
+      # stay manual — tracked at W5-16, and their absence is the reason this
+      # comment names them rather than leaving the omission to be inferred.
+      - name: Prove the parameter freeze (W6-03)
+        env:
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/xwealth
+        run: npm run verify-freeze
+
+      - name: Prove no layer drops an abandoned window (W8-05)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/xwealth
+        run: npm run verify-ledger

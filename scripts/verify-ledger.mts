@@ -19,7 +19,7 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-const { and, eq } = await import("drizzle-orm");
+const { and, eq, sql } = await import("drizzle-orm");
 const { db } = await import("@/db");
 const { forwardTests, strategies, strategyVersions, users } = await import("@/db/schema");
 const { ledgerCounts, ledgerForwardTests } = await import("@/server/queries/ledger");
@@ -30,18 +30,25 @@ const check = (ok: boolean, label: string, detail = "") => {
   console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  ${detail}` : ""}`);
 };
 
-const [owner] = await db().select({ id: users.id }).from(users).limit(1);
-if (!owner) {
-  console.error("No users — cannot build a ledger to read.");
-  process.exit(1);
+/**
+ * A minimal account, for a database that has none.
+ *
+ * `users.auth_user_id` is NOT NULL and references `auth.users` — a table
+ * Supabase owns and our migrations deliberately do not create — so the row has
+ * to be placed there first. Only `id` is set: every other column is nullable or
+ * defaulted on both Supabase and the CI stub, and naming more of them would
+ * couple this fixture to a table we do not control.
+ */
+async function seedOwner(tx: Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0]) {
+  const [authUser] = await tx.execute<{ id: string }>(
+    sql`insert into auth.users (id) values (gen_random_uuid()) returning id`,
+  );
+  const [owner] = await tx
+    .insert(users)
+    .values({ authUserId: authUser.id })
+    .returning({ id: users.id });
+  return owner;
 }
-
-const before = await ledgerCounts(owner.id);
-console.log(
-  `\nledger for an existing account · ${before.strategies} strategies, ` +
-    `${before.forwardTestsStarted} forward tests (${before.running} live, ` +
-    `${before.completed} completed, ${before.abandoned} abandoned)\n`,
-);
 
 const DEFINITION = {
   version: 1,
@@ -56,8 +63,51 @@ const DEFINITION = {
 
 class Rollback extends Error {}
 
+/**
+ * How many accounts existed before any of this ran.
+ *
+ * Read outside the transaction on purpose: it is the baseline the rollback is
+ * measured against, and on an empty database the fixture account is created
+ * inside the transaction, so this is what proves the rollback took it away too.
+ */
+const [{ count: usersAtStart }] = await db().execute<{ count: number }>(
+  sql`select count(*)::int as count from users`,
+);
+
+/**
+ * Assigned inside the transaction, read after it. Both are needed once the
+ * transaction has rolled back, and neither can be resolved before it opens —
+ * the account may not exist yet.
+ */
+let owner: { id: string } | undefined;
+let before: Awaited<ReturnType<typeof ledgerCounts>> | undefined;
+
 try {
   await db().transaction(async (tx) => {
+    /**
+     * An existing account if there is one, a fixture account if there is not.
+     *
+     * Both the owner lookup and the baseline counts moved inside the
+     * transaction so that this runs against an empty database as well as a
+     * populated one — which is what lets CI prove it (W5-16). Requiring a
+     * pre-existing user meant the ledger could only be verified by hand against
+     * the live project, and a guarantee proven only by hand is proven only as
+     * recently as someone last remembered to prove it.
+     *
+     * The baseline is read through `tx` for the same reason the assertions are:
+     * both must see the same rows, and a second connection would not see the
+     * seed at all.
+     */
+    const [existing] = await tx.select({ id: users.id }).from(users).limit(1);
+    owner = existing ?? (await seedOwner(tx));
+
+    before = await ledgerCounts(owner.id, tx);
+    console.log(
+      `\nledger for ${existing ? "an existing" : "a seeded"} account · ` +
+        `${before.strategies} strategies, ${before.forwardTestsStarted} forward tests ` +
+        `(${before.running} live, ${before.completed} completed, ${before.abandoned} abandoned)\n`,
+    );
+
     const [strategy] = await tx
       .insert(strategies)
       .values({
@@ -201,11 +251,30 @@ try {
   }
 }
 
+if (!owner || !before) {
+  console.error("\n✗ the fixture never opened — nothing was verified");
+  process.exit(1);
+}
+
 const after = await ledgerCounts(owner.id);
 check(
   after.forwardTestsStarted === before.forwardTestsStarted,
   "rolled back — the account's real record is untouched",
   `${after.forwardTestsStarted} forward tests`,
+);
+
+/**
+ * `ledgerCounts` alone does not prove the rollback on an empty database: it is
+ * scoped to one user id, so a fixture account that survived would simply report
+ * zero windows and read as a pass. Counting the table catches that.
+ */
+const [{ count: usersNow }] = await db().execute<{ count: number }>(
+  sql`select count(*)::int as count from users`,
+);
+check(
+  usersNow === usersAtStart,
+  "rolled back — no fixture account survived",
+  `${usersNow} account(s)`,
 );
 
 console.log(

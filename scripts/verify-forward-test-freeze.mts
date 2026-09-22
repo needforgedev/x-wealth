@@ -18,6 +18,8 @@
  * Runs entirely inside a transaction that is rolled back, so it writes nothing
  * to the append-only tables it is testing.
  */
+import { randomUUID } from "node:crypto";
+
 import { config } from "dotenv";
 import postgres from "postgres";
 
@@ -29,7 +31,44 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { ssl: "require", max: 1, idle_timeout: 20, connect_timeout: 30 });
+/**
+ * TLS against a hosted database, none against a local one.
+ *
+ * Supabase requires TLS. A Postgres container does not speak it at all, and
+ * `ssl: "require"` against one fails with ECONNRESET before a single attack is
+ * landed — which is half the reason this script could only ever be run by hand
+ * against the live project.
+ *
+ * Decided from the host rather than from an env var deliberately: there is no
+ * flag anyone can set, or forget to unset, that would quietly drop TLS on the
+ * way to the real database.
+ */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1"]);
+const isLocal = LOOPBACK.has(new URL(url).hostname);
+
+const sql = postgres(url, {
+  ssl: isLocal ? false : "require",
+  max: 1,
+  idle_timeout: 20,
+  connect_timeout: 30,
+});
+
+/**
+ * A minimal account, for a database that has none.
+ *
+ * `users.auth_user_id` is NOT NULL and references `auth.users` — a table
+ * Supabase owns and our migrations deliberately do not create — so the row has
+ * to be placed there first. Only `id` is set: every other column is nullable or
+ * defaulted on both Supabase and the CI stub, and naming more of them would
+ * couple this fixture to a table we do not control.
+ */
+async function seedUser(tx: postgres.TransactionSql): Promise<{ id: string }> {
+  const authUserId = randomUUID();
+  await tx`insert into auth.users (id) values (${authUserId})`;
+  const [user] = await tx<{ id: string }[]>`
+    insert into users (auth_user_id) values (${authUserId}) returning id`;
+  return user;
+}
 
 type Attack = { name: string; run: (tx: postgres.TransactionSql, ids: Ids) => Promise<unknown> };
 type Ids = { testId: string; otherVersionId: string; openTradeId: string; closedTradeId: string };
@@ -125,19 +164,32 @@ let refused = 0;
 let allowed = 0;
 
 try {
-  // `users`, not `advisors`. The two-persona tables were collapsed into one in
-  // migration 0010 (W24), and this script kept naming the old one — so it has
-  // been dying on setup, before landing a single attack, since 27 Aug 2026.
-  // Nothing caught it because CI runs typecheck, lint, tests, build and
-  // `verify_invariants.sql`, and none of the four `verify-*` scripts.
-  const [user] = await sql`select id from users limit 1`;
-  if (!user) {
-    console.error("No user rows — cannot build a forward test to attack.");
-    process.exit(1);
-  }
-
   await sql
     .begin(async (tx) => {
+      /**
+       * An existing account if there is one, a fixture account if there is not.
+       *
+       * `users`, not `advisors`. The two-persona tables were collapsed into one
+       * in migration 0010 (W24), and this script kept naming the old one — so
+       * it was dying on setup, before landing a single attack, from 27 Aug 2026
+       * until it was noticed a day later. Nothing caught it because CI runs
+       * typecheck, lint, tests, build and `verify_invariants.sql`, and none of
+       * the four `verify-*` scripts. That is W5-16, and this script running in
+       * CI is what closes it.
+       *
+       * Requiring a pre-existing user is what kept it out of CI: it meant the
+       * freeze could only be proven against a populated database, so it was
+       * proven by hand or not at all. A bare Postgres with the migrations
+       * applied is a complete test of the freeze — every trigger and grant
+       * under attack below is created by a migration, and a real account brings
+       * none of them.
+       *
+       * The seed happens inside the same transaction as everything else, so a
+       * live database is still never written to.
+       */
+      const [existing] = await tx`select id from users limit 1`;
+      const user = existing ?? (await seedUser(tx));
+
       // --- a RUNNING forward test with one open and one closed trade --------
       const [strategy] = await tx`
         insert into strategies (user_id, name, segment, timeframe)
