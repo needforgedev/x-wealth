@@ -173,20 +173,22 @@ describe("input validation", () => {
 });
 
 describe("the NSE calendar", () => {
-  const YEARS = ["2023", "2024", "2025", "2026"];
+  const YEARS = ["2020", "2021", "2022", "2023", "2024", "2025", "2026"];
 
   /**
    * The placeholder this replaced carried three holidays for one year, and the
-   * consequence was not an error anywhere — it was a 60-session window whose
-   * `planned_end_at` landed twelve calendar days early with seven sessions
-   * still to run. Nothing failed; the date was just wrong. A count is therefore
-   * the only thing that catches a year being truncated, half-entered, or
-   * dropped by a merge.
+   * consequence was not an error anywhere — a 60-session window simply reported
+   * an end date twelve days early. A count is the only thing that catches a
+   * year being truncated, half-entered, or dropped by a merge.
+   *
+   * The band is **weekday closures**, not gazetted holidays: roughly a third of
+   * the published list falls on a weekend in any given year, and Diwali Laxmi
+   * Pujan trades a Muhurat session. Observed range across seven years is 12–17.
    */
   it("carries a full year of holidays for every year it claims to cover", () => {
     for (const year of YEARS) {
       const count = [...NSE_CALENDAR.holidays].filter((d) => d.startsWith(year)).length;
-      expect(count, `${year} has ${count} holidays`).toBeGreaterThanOrEqual(15);
+      expect(count, `${year} has ${count} holidays`).toBeGreaterThanOrEqual(10);
       expect(count, `${year} has ${count} holidays`).toBeLessThanOrEqual(20);
     }
   });
@@ -195,22 +197,34 @@ describe("the NSE calendar", () => {
     const dates = [...NSE_CALENDAR.holidays].sort();
     expect(dates[0] >= NSE_CALENDAR_COVERS.from).toBe(true);
     expect(dates[dates.length - 1] <= NSE_CALENDAR_COVERS.to).toBe(true);
+    expect(NSE_CALENDAR_COVERS.verifiedTo > NSE_CALENDAR_COVERS.from).toBe(true);
     for (const d of dates) expect(YEARS).toContain(d.slice(0, 4));
   });
 
   /**
-   * The trap. Diwali Laxmi Pujan is a gazetted trading holiday, so normal
-   * trading never opens — but the exchange runs the Muhurat session that
-   * evening and a daily bar exists. A calendar that listed it as a holiday and
-   * stopped there would make `assertValidSeries` reject four genuine bars.
+   * Diwali Laxmi Pujan is a gazetted trading holiday on which the exchange
+   * still runs the Muhurat session, so prices print and a daily bar exists.
    *
-   * Asserted from both directions: it is in the holiday list *and* it resolves
-   * as a session. Dropping either half breaks exactly one of these.
+   * The first version of this calendar listed those dates as holidays and then
+   * had to override them; deriving the list from bars removes the special case
+   * entirely — a date that traded is simply not a holiday. What is asserted is
+   * the outcome, which is what every caller depends on.
    */
-  it("treats Diwali Muhurat days as sessions despite being holidays", () => {
-    for (const date of ["2023-11-12", "2024-11-01", "2025-10-21", "2026-11-08"]) {
-      expect(NSE_CALENDAR.holidays.has(date), `${date} listed as a holiday`).toBe(true);
+  it("treats Diwali Muhurat weekdays as ordinary sessions", () => {
+    for (const date of ["2024-11-01", "2025-10-21"]) {
+      expect(NSE_CALENDAR.holidays.has(date), `${date} is not a holiday`).toBe(false);
       expect(isTradingSession(date, NSE_CALENDAR), `${date} is a session`).toBe(true);
+    }
+  });
+
+  /**
+   * The weekend rule is computed, not listed, so these are the only dates that
+   * have to be stated out loud. Each was observed as a real bar.
+   */
+  it("keeps the weekend sessions the exchange actually held", () => {
+    for (const date of ["2023-11-12", "2025-02-01", "2026-02-01", "2026-11-08"]) {
+      expect(isWeekend(date), `${date} is a weekend`).toBe(true);
+      expect(isTradingSession(date, NSE_CALENDAR), `${date} traded anyway`).toBe(true);
     }
   });
 
@@ -222,8 +236,7 @@ describe("the NSE calendar", () => {
 
   /**
    * The count the placeholder got wrong, pinned as a number. A 60-session
-   * window opened on the first session of March 2026 ends on 3 June, not the
-   * 22 May the three-holiday placeholder reported.
+   * window opened on the first session of March 2026 does not end on 22 May.
    */
   it("counts a 60-session window across real holidays", () => {
     const end = addSessions("2026-03-02", 59, NSE_CALENDAR);
