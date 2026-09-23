@@ -43,7 +43,7 @@ export async function createStrategy(input: {
   description: string;
   hypothesis: string;
   definition: StrategyDefinition;
-}): Promise<ActionResult<{ strategyId: string }>> {
+}): Promise<ActionResult<{ strategyId: string; versionId: string }>> {
   const name = input.name.trim();
   const hypothesis = input.hypothesis.trim();
 
@@ -61,7 +61,7 @@ export async function createStrategy(input: {
     const issues = validateStrategyDefinition(input.definition, await loadCatalogue());
     if (issues.length > 0) return { ok: false, error: issues[0].message };
 
-    const strategyId = await db().transaction(async (tx) => {
+    const created = await db().transaction(async (tx) => {
       const [strategy] = await tx
         .insert(strategies)
         .values({
@@ -91,11 +91,15 @@ export async function createStrategy(input: {
         .set({ currentVersionId: version.id, updatedAt: new Date() })
         .where(eq(strategies.id, strategy.id));
 
-      return strategy.id;
+      // The version id travels back with the strategy id so a caller that
+      // arrived from the compiler can record which version resulted from the
+      // interaction (`W4-12`). That link is the evidence the human authored the
+      // strategy, and it cannot be reconstructed later without guessing.
+      return { strategyId: strategy.id, versionId: version.id };
     });
 
     revalidatePath("/home");
-    return { ok: true, data: { strategyId } };
+    return { ok: true, data: created };
   } catch (error) {
     return { ok: false, error: messageFor(error) };
   }

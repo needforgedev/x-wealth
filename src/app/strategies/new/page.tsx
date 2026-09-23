@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AppBar } from "@/components/AppBar";
@@ -31,7 +32,20 @@ export default async function NewStrategyPage() {
           Rules, then the hypothesis you intend to test. Both are recorded before any result
           exists — that ordering is the point.
         </p>
-        <div className="mt-6">
+        <Link
+          href="/strategies/new/chat"
+          className="mt-5 flex flex-col rounded-[8px] border border-brand px-4 py-4"
+        >
+          <span className="text-[15px] font-semibold text-ink">Describe it in plain English</span>
+          <span className="mt-[2px] text-[13px] text-muted">
+            The compiler turns a sentence into the same six components this form asks for, and
+            asks about anything you leave out.
+          </span>
+        </Link>
+
+        <p className="mt-6 text-[13px] font-medium uppercase text-muted">Or fill it in yourself</p>
+
+        <div className="mt-3">
           <NewStrategyForm catalogue={catalogue} />
         </div>
       </div>

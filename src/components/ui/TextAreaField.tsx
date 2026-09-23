@@ -25,10 +25,24 @@ export function TextAreaField({
   height = 72,
   className = "",
   id,
+  value: controlledValue,
+  onChange,
   ...props
 }: TextAreaFieldProps) {
   const fieldId = id ?? `field-${label.toLowerCase().replace(/\s+/g, "-")}`;
-  const [value, setValue] = useState(defaultValue);
+  const [uncontrolled, setUncontrolled] = useState(defaultValue);
+
+  /**
+   * Controlled when the caller passes `value`, uncontrolled otherwise.
+   *
+   * The previous version always held its own state and then spread `...props`
+   * over it, so a controlled caller worked by accident — the spread won — while
+   * the character counter kept reading the internal value it no longer owned.
+   * A `limit` on a controlled field therefore rendered a number that never
+   * moved, which reads as a broken field rather than a broken counter.
+   */
+  const isControlled = controlledValue !== undefined;
+  const value = isControlled ? String(controlledValue) : uncontrolled;
 
   return (
     <div className={containerClassName}>
@@ -41,13 +55,16 @@ export function TextAreaField({
 
       <div className="relative mt-[10px]">
         <textarea
+          {...props}
           id={fieldId}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            if (!isControlled) setUncontrolled(e.target.value);
+            onChange?.(e);
+          }}
           maxLength={limit}
           style={{ height }}
           className={`w-full resize-none rounded-[4px] border border-line bg-transparent px-5 pt-[17px] pb-[22px] text-[15px] text-ink outline-none placeholder:text-muted focus:border-brand ${className}`}
-          {...props}
         />
         {limit != null && (
           <span className="pointer-events-none absolute bottom-[7px] right-[15px] text-[12px] text-counter">
