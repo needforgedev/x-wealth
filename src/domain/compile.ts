@@ -42,6 +42,8 @@ import {
   type Sizing,
   type StrategyDefinitionV2,
   type ValidationIssue,
+  describeCondition,
+  describeSizing,
   validateStrategyDefinition,
 } from "./strategy";
 
@@ -498,6 +500,33 @@ export const COMPILE_SYSTEM_PROMPT = [
 ].join("\n");
 
 /**
+ * The extra instruction when an existing version is being revised.
+ *
+ * The whole risk of a compiled revision is scope: a model asked to widen a stop
+ * will cheerfully re-round the sizing or tidy an instrument list on the way
+ * past, and the user reading the result is reading the *new* rules, not
+ * comparing them. `strategy_versions` is append-only, so an over-eager revision
+ * is permanent and its lineage misleading.
+ *
+ * The instruction is therefore blunt, and the screen shows a field-level diff
+ * regardless — this is the request, `diffDefinitions` is the check.
+ */
+export const REVISE_SYSTEM_PROMPT = [
+  "",
+  "You are revising an EXISTING strategy, supplied as `current`.",
+  "",
+  "8. Return the complete definition, not a patch — every field, including the",
+  "   ones you are leaving alone.",
+  "9. **Change only what the user asked you to change.** Every other field must",
+  "   come back byte-identical to `current`. Do not re-round numbers, reorder",
+  "   instruments, tidy values, or improve anything you were not asked about.",
+  "10. The six components are already settled, so ask a question only if the",
+  "    requested change is genuinely ambiguous. `Widen the stop` is ambiguous;",
+  "    `widen the stop to 7%` is not.",
+  "11. `summary` states what changed and nothing else.",
+].join("\n");
+
+/**
  * The input snapshot, recorded verbatim in `ai_interactions.input_snapshot`.
  *
  * **No PII.** Phone, email, name and date of birth never enter this object —
@@ -510,11 +539,16 @@ export function buildCompileInput(input: {
   readonly catalogue: readonly InstrumentChoice[];
   readonly answers?: ReadonlyArray<{ questionId: string; answer: string }>;
   readonly defaultCapitalPaise: number;
+  /** Present when revising: the version being changed. */
+  readonly current?: StrategyDefinitionV2 | null;
 }): Record<string, unknown> {
   return {
     promptVersion: COMPILE_PROMPT_VERSION,
-    system: COMPILE_SYSTEM_PROMPT,
+    system: input.current
+      ? `${COMPILE_SYSTEM_PROMPT}\n${REVISE_SYSTEM_PROMPT}`
+      : COMPILE_SYSTEM_PROMPT,
     idea: input.idea,
+    ...(input.current ? { current: input.current } : {}),
     // Symbol and name only. `barCount` would invite the model to reason about
     // which instruments have more history, which is a data-driven choice.
     catalogue: input.catalogue
@@ -527,4 +561,66 @@ export function buildCompileInput(input: {
       note: "Use the default capital unless the user stated one. Do not ask about it.",
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Revising an existing version
+// ---------------------------------------------------------------------------
+
+/**
+ * Every component of a definition, labelled once.
+ *
+ * Shared by the review table and the revision diff so the two cannot describe
+ * the same field differently — a diff saying "Stop-loss" beside a table saying
+ * "Stop %" is how a user ends up unsure whether they are looking at one field
+ * or two.
+ */
+export function definitionRows(d: StrategyDefinitionV2): Array<[string, string]> {
+  const rupees = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN")}`;
+  return [
+    ["Universe", d.universe.instruments.join(", ")],
+    [
+      "Liquidity floor",
+      d.universe.minAvgTurnoverPaise === null
+        ? "None"
+        : `${rupees(d.universe.minAvgTurnoverPaise)} average turnover`,
+    ],
+    ["Timeframe", d.timeframe],
+    ["Entry", describeCondition(d.entry)],
+    ["Exit", describeCondition(d.exit)],
+    ["Target", d.targetPercent === null ? "Exit signal only" : `${d.targetPercent}% above entry`],
+    ["Stop-loss", `${d.stopLossPercent}% below entry`],
+    ["Sizing", describeSizing(d.sizing)],
+    ["Max positions", String(d.maxConcurrentPositions)],
+    ["Max exposure", `${d.maxExposurePercent}%`],
+    ["Capital", rupees(d.initialCapitalPaise)],
+  ];
+}
+
+export type FieldChange = { field: string; from: string; to: string };
+
+/**
+ * What a revision actually changed.
+ *
+ * The load-bearing property of a compiled revision is that **it changes only
+ * what was asked for**. A model told to widen the stop can quietly re-round the
+ * position size or drop an instrument, and a user reading a rendered rule set
+ * has no way to notice — they are reading the new version, not comparing it.
+ *
+ * So the revision screen shows this instead of trusting the prompt. It is the
+ * difference between asking the model to behave and letting the user check.
+ * `strategy_versions` is append-only and its lineage is the iteration ledger,
+ * so a version that changed more than its author intended is permanent.
+ */
+export function diffDefinitions(
+  before: StrategyDefinitionV2,
+  after: StrategyDefinitionV2,
+): FieldChange[] {
+  const b = definitionRows(before);
+  const a = definitionRows(after);
+  const changes: FieldChange[] = [];
+  for (let i = 0; i < a.length; i++) {
+    if (b[i][1] !== a[i][1]) changes.push({ field: a[i][0], from: b[i][1], to: a[i][1] });
+  }
+  return changes;
 }

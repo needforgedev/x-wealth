@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   COMPILE_JSON_SCHEMA,
   COMPILE_SYSTEM_PROMPT,
+  REVISE_SYSTEM_PROMPT,
   buildCompileInput,
   compileDefinition,
+  definitionRows,
+  diffDefinitions,
   type CompileOutput,
   type DefinitionDraft,
 } from "./compile";
@@ -247,5 +250,79 @@ describe("the output contract", () => {
     for (const banned of ["pine", "pinescript", "python", "javascript", "source code", "snippet"]) {
       expect(serialised, banned).not.toMatch(new RegExp(`\\b${banned}\\b`));
     }
+  });
+});
+
+
+describe("revising an existing version", () => {
+  const base = compileDefinition(compiled(GOOD_DRAFT), CATALOGUE);
+  if (base.status !== "COMPILED") throw new Error("fixture must compile");
+  const before = base.definition;
+
+  function after(patch: Partial<DefinitionDraft>) {
+    const r = compileDefinition(compiled({ ...GOOD_DRAFT, ...patch }), CATALOGUE);
+    if (r.status !== "COMPILED") throw new Error("patched fixture must compile");
+    return r.definition;
+  }
+
+  it("reports nothing when nothing moved", () => {
+    expect(diffDefinitions(before, before)).toEqual([]);
+  });
+
+  it("names the field, what it was, and what it became", () => {
+    const changes = diffDefinitions(before, after({ stopLossPercent: 7 }));
+    expect(changes).toEqual([{ field: "Stop-loss", from: "5% below entry", to: "7% below entry" }]);
+  });
+
+  /**
+   * The property the whole revision flow rests on. A model asked to widen a
+   * stop can re-round the sizing or drop an instrument on the way past, and a
+   * rendered rule set shows what the rules *now are* — not what moved. The diff
+   * is what turns "the prompt asked it not to" into something the user checks.
+   */
+  it("catches a change the user did not ask for, alongside the one they did", () => {
+    const sneaky = after({ stopLossPercent: 7, riskPercent: 3, instruments: ["NSE:TCS"] });
+    const fields = diffDefinitions(before, sneaky).map((c) => c.field);
+    expect(fields).toContain("Stop-loss");
+    expect(fields).toContain("Sizing");
+    expect(fields).toContain("Universe");
+    expect(fields).toHaveLength(3);
+  });
+
+  it("sees every component a revision could touch", () => {
+    // A field the diff cannot express is a field a revision could change
+    // silently, so the two lists must stay the same length.
+    expect(definitionRows(before)).toHaveLength(11);
+    const everything = after({
+      instruments: ["NSE:TCS"], minAvgTurnoverPaise: null, stopLossPercent: 7,
+      targetPercent: null, riskPercent: 2, maxConcurrentPositions: 3,
+      maxExposurePercent: 20, initialCapitalPaise: 50_000_000,
+      entry: { left: { kind: "SMA", period: 20 }, comparator: "CROSSES_ABOVE", right: { kind: "SMA", period: 50 } },
+      exit: { left: { kind: "SMA", period: 20 }, comparator: "CROSSES_BELOW", right: { kind: "SMA", period: 50 } },
+    });
+    // Timeframe is the one component with a single legal value today.
+    expect(diffDefinitions(before, everything)).toHaveLength(10);
+  });
+
+  it("shows the model the current rules, and tells it to change only what was asked", () => {
+    const input = buildCompileInput({
+      idea: "widen the stop to 7%",
+      catalogue: CATALOGUE,
+      defaultCapitalPaise: 10_000_000,
+      current: before,
+    });
+    expect(input.current).toEqual(before);
+    expect(String(input.system)).toContain("Change only what the user asked you to change");
+    expect(REVISE_SYSTEM_PROMPT).toContain("byte-identical");
+  });
+
+  it("says nothing about revising when authoring from scratch", () => {
+    const input = buildCompileInput({
+      idea: "buy the dip",
+      catalogue: CATALOGUE,
+      defaultCapitalPaise: 10_000_000,
+    });
+    expect(input.current).toBeUndefined();
+    expect(String(input.system)).not.toContain("EXISTING strategy");
   });
 });

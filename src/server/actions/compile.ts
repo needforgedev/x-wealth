@@ -4,9 +4,13 @@ import {
   COMPILE_PROMPT_VERSION,
   buildCompileInput,
   compileDefinition,
+  diffDefinitions,
   type CompileOutput,
   type CompileResult,
+  type FieldChange,
 } from "@/domain/compile";
+import { upgradeToV2, type StrategyDefinition, type StrategyDefinitionV2 } from "@/domain/strategy";
+import { headVersionFor } from "@/server/queries/strategy";
 import { runInteraction, recordUserActed } from "@/server/ai";
 import { NotAuthorisedError, requireUser } from "@/server/identity";
 import { loadCatalogue } from "@/server/market-data/catalogue";
@@ -46,11 +50,20 @@ export type CompileResponse = {
   /** False when no provider is configured, so the screen can say so. */
   readonly live: boolean;
   readonly result: CompileResult;
+  /** Null unless this was a revision that compiled. */
+  readonly changes: FieldChange[] | null;
 };
 
 export async function compileStrategy(input: {
   idea: string;
   answers?: Array<{ questionId: string; answer: string }>;
+  /**
+   * The strategy being revised, if any. Its head version is read **from the
+   * database by id**, never accepted from the client: a definition sent over
+   * the wire could differ from the recorded one, and the diff the user is shown
+   * would then be against rules that were never saved.
+   */
+  strategyId?: string;
 }): Promise<ActionResult<CompileResponse>> {
   const idea = input.idea.trim();
   if (idea.length < 10) {
@@ -63,6 +76,13 @@ export async function compileStrategy(input: {
   try {
     const { user } = await requireUser();
     const catalogue = await loadCatalogue();
+
+    const current = input.strategyId
+      ? await headDefinitionFor({ strategyId: input.strategyId, userId: user.id })
+      : null;
+    if (input.strategyId && !current) {
+      return { ok: false, error: "No such strategy." };
+    }
 
     if (catalogue.length === 0) {
       return {
@@ -80,6 +100,7 @@ export async function compileStrategy(input: {
         catalogue,
         answers: input.answers,
         defaultCapitalPaise: DEFAULT_CAPITAL_PAISE,
+        current,
       }),
     });
 
@@ -94,6 +115,13 @@ export async function compileStrategy(input: {
         modelId: logged.modelId,
         live: !logged.modelId.startsWith("stub"),
         result,
+        // Field-level, computed here rather than trusted from the model. A
+        // revision that changed more than its author asked for is permanent,
+        // because `strategy_versions` is append-only.
+        changes:
+          current && result.status === "COMPILED"
+            ? diffDefinitions(current, result.definition)
+            : null,
       },
     };
   } catch (error) {
@@ -132,4 +160,19 @@ export async function markCompileActed(input: {
     if (error instanceof NotAuthorisedError) return { ok: false, error: "Sign in first." };
     return { ok: false, error: "Could not record the decision." };
   }
+}
+
+/**
+ * The definition a revision starts from, read by id and scoped to the caller.
+ *
+ * Carried forward through `upgradeToV2` because a V1 row is still editable —
+ * revising one produces a V2 version, which is what keeps the six mandatory
+ * components mandatory rather than merely available.
+ */
+async function headDefinitionFor(input: {
+  strategyId: string;
+  userId: string;
+}): Promise<StrategyDefinitionV2 | null> {
+  const head = await headVersionFor(input);
+  return head ? upgradeToV2(head.definition as StrategyDefinition) : null;
 }

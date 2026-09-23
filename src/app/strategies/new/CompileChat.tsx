@@ -6,15 +6,15 @@ import { useState } from "react";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { TextAreaField } from "@/components/ui/TextAreaField";
 import { TextField } from "@/components/ui/TextField";
-import type { CompileResult, IntakeQuestion } from "@/domain/compile";
 import {
-  describeCondition,
-  describeSizing,
-  type InstrumentChoice,
-  type StrategyDefinitionV2,
-} from "@/domain/strategy";
+  definitionRows,
+  type CompileResult,
+  type FieldChange,
+  type IntakeQuestion,
+} from "@/domain/compile";
+import { type InstrumentChoice, type StrategyDefinitionV2 } from "@/domain/strategy";
 import { compileStrategy, markCompileActed } from "@/server/actions/compile";
-import { createStrategy } from "@/server/actions/strategy";
+import { createStrategy, reviseStrategy } from "@/server/actions/strategy";
 
 /**
  * Describe an idea; get a rule set back. `plan.md` W4-12, `CLAUDE.md` §7.3.
@@ -45,12 +45,40 @@ type Phase =
   | { name: "IDEA" }
   | { name: "WORKING" }
   | { name: "QUESTIONS"; questions: readonly IntakeQuestion[] }
-  | { name: "REVIEW"; definition: StrategyDefinitionV2; assumptions: readonly string[]; summary: string | null }
+  | {
+      name: "REVIEW";
+      definition: StrategyDefinitionV2;
+      assumptions: readonly string[];
+      summary: string | null;
+      changes: FieldChange[] | null;
+    }
   | { name: "REJECTED"; issues: readonly { field: string; message: string }[] };
 
 type Turn = { role: "you" | "compiler"; text: string };
 
-export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
+/**
+ * Revising an existing version rather than authoring a new one.
+ *
+ * The difference that matters is not the action called at the end — it is that
+ * the user is owed a **diff**. A revision renders as a complete rule set, so
+ * reading it tells you what the rules now are and nothing about what moved; a
+ * model asked to widen a stop can re-round the sizing on the way past and the
+ * screen would look entirely correct. `strategy_versions` is append-only, so
+ * that version is permanent and its lineage misleading.
+ */
+export type ReviseTarget = {
+  strategyId: string;
+  versionNo: number;
+  onSaved: () => void;
+};
+
+export function CompileChat({
+  catalogue,
+  revise,
+}: {
+  catalogue: InstrumentChoice[];
+  revise?: ReviseTarget;
+}) {
   const router = useRouter();
 
   const [idea, setIdea] = useState("");
@@ -63,6 +91,7 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
+  const [changeNote, setChangeNote] = useState("");
   const [hypothesis, setHypothesis] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -70,21 +99,25 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
     setError(null);
     setPhase({ name: "WORKING" });
 
-    const response = await compileStrategy({ idea, answers: withAnswers });
+    const response = await compileStrategy({
+      idea,
+      answers: withAnswers,
+      strategyId: revise?.strategyId,
+    });
     if (!response.ok) {
       setError(response.error);
       setPhase({ name: "IDEA" });
       return;
     }
 
-    const { result, interactionId: id, live: isLive, modelId: model } = response.data;
+    const { result, interactionId: id, live: isLive, modelId: model, changes } = response.data;
     setInteractionId(id);
     setLive(isLive);
     setModelId(model);
-    applyResult(result);
+    applyResult(result, changes);
   }
 
-  function applyResult(result: CompileResult) {
+  function applyResult(result: CompileResult, changes: FieldChange[] | null) {
     if (result.status === "NEEDS_INPUT") {
       setTurns((t) => [
         ...t,
@@ -100,6 +133,7 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
         definition: result.definition,
         assumptions: result.assumptions,
         summary: result.summary,
+        changes,
       });
       return;
     }
@@ -229,6 +263,8 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
       {/* ---- 3. review, then name it ------------------------------------- */}
       {phase.name === "REVIEW" && (
         <div className="flex flex-col gap-5">
+          {phase.changes !== null && <ChangeList changes={phase.changes} />}
+
           {phase.assumptions.length > 0 && (
             <div className="rounded-[8px] border border-line bg-surface-alt px-4 py-3">
               <p className="text-[13px] font-semibold text-ink">Settled without asking you</p>
@@ -247,12 +283,22 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
           <RuleTable definition={phase.definition} />
 
           <div className="flex flex-col gap-3">
-            <TextField
-              label="Name"
-              placeholder="Reliance RSI reversion"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            {!revise && (
+              <TextField
+                label="Name"
+                placeholder="Reliance RSI reversion"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            )}
+            {revise && (
+              <TextField
+                label="What changed, and why"
+                placeholder="Widened the stop after three exits inside noise."
+                value={changeNote}
+                onChange={(e) => setChangeNote(e.target.value)}
+              />
+            )}
             <TextAreaField
               label="The hypothesis you are testing"
               height={96}
@@ -267,10 +313,43 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
           </div>
 
           <PrimaryButton
-            disabled={saving || name.trim().length < 3 || hypothesis.trim().length < 10}
+            disabled={
+              saving ||
+              hypothesis.trim().length < 10 ||
+              (revise ? phase.changes?.length === 0 : name.trim().length < 3)
+            }
             onClick={async () => {
               setSaving(true);
               setError(null);
+
+              // Both paths land on a version accepted on its own terms — six
+              // mandatory components, validator, CHECK — so the compiler is a
+              // route to them and never around them (§8.6). The version exists
+              // before the interaction is told what resulted from it; a failure
+              // on that second step costs the evidence link, not the version.
+              const link = async (versionId: string) => {
+                if (interactionId) {
+                  await markCompileActed({ interactionId, resultingVersionId: versionId });
+                }
+              };
+
+              if (revise) {
+                const saved = await reviseStrategy({
+                  strategyId: revise.strategyId,
+                  hypothesis: hypothesis.trim(),
+                  changeNote: changeNote.trim(),
+                  definition: phase.definition,
+                });
+                if (!saved.ok) {
+                  setError(saved.error);
+                  setSaving(false);
+                  return;
+                }
+                await link(saved.data.versionId);
+                revise.onSaved();
+                router.refresh();
+                return;
+              }
 
               const saved = await createStrategy({
                 name: name.trim(),
@@ -278,28 +357,16 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
                 hypothesis: hypothesis.trim(),
                 definition: phase.definition,
               });
-
               if (!saved.ok) {
                 setError(saved.error);
                 setSaving(false);
                 return;
               }
-
-              // The strategy exists on its own terms first; only then is the
-              // interaction told what resulted from it (§8.6). A failure here
-              // costs the evidence link, not the strategy, so it does not
-              // block the user.
-              if (interactionId) {
-                await markCompileActed({
-                  interactionId,
-                  resultingVersionId: saved.data.versionId,
-                });
-              }
-
+              await link(saved.data.versionId);
               router.push(`/strategies/${saved.data.strategyId}`);
             }}
           >
-            {saving ? "Saving…" : "Save strategy"}
+            {saving ? "Saving…" : revise ? `Save version ${revise.versionNo + 1}` : "Save strategy"}
           </PrimaryButton>
 
           <button
@@ -357,34 +424,49 @@ export function CompileChat({ catalogue }: { catalogue: InstrumentChoice[] }) {
  * them to sign something they had not read.
  */
 function RuleTable({ definition }: { definition: StrategyDefinitionV2 }) {
-  const rows: Array<[string, string]> = [
-    ["Universe", definition.universe.instruments.join(", ")],
-    [
-      "Liquidity floor",
-      definition.universe.minAvgTurnoverPaise === null
-        ? "None"
-        : `₹${(definition.universe.minAvgTurnoverPaise / 100).toLocaleString("en-IN")} average turnover`,
-    ],
-    ["Timeframe", definition.timeframe],
-    ["Entry", describeCondition(definition.entry)],
-    ["Exit", describeCondition(definition.exit)],
-    ["Target", definition.targetPercent === null ? "Exit signal only" : `${definition.targetPercent}% above entry`],
-    ["Stop-loss", `${definition.stopLossPercent}% below entry`],
-    ["Sizing", describeSizing(definition.sizing)],
-    ["Max positions", String(definition.maxConcurrentPositions)],
-    ["Max exposure", `${definition.maxExposurePercent}%`],
-    ["Capital", `₹${(definition.initialCapitalPaise / 100).toLocaleString("en-IN")}`],
-  ];
-
   return (
     <div className="rounded-[8px] border border-line">
-      {rows.map(([label, value], i) => (
+      {definitionRows(definition).map(([label, value], i) => (
         <div
           key={label}
           className={`flex gap-4 px-4 py-3 ${i > 0 ? "border-t border-line" : ""}`}
         >
           <span className="w-[110px] shrink-0 text-[13px] text-muted">{label}</span>
           <span className="text-[13px] text-ink">{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What this revision moved, and nothing else.
+ *
+ * Placed above the full rule set rather than below it: a reader who has already
+ * absorbed the new rules has stopped looking for what changed. An empty diff is
+ * stated rather than hidden — "nothing changed" is a refusal `reviseStrategy`
+ * is about to make anyway, and saying so here explains it before it happens.
+ */
+function ChangeList({ changes }: { changes: FieldChange[] }) {
+  if (changes.length === 0) {
+    return (
+      <p className="rounded-[8px] border border-line bg-surface-alt px-4 py-3 text-[13px] text-ink">
+        Nothing changed. A version identical to the one before it cannot be saved — it would
+        pad the ledger without recording a decision.
+      </p>
+    );
+  }
+
+  return (
+    <div className="rounded-[8px] border border-brand">
+      <p className="border-b border-line px-4 py-3 text-[13px] font-semibold text-ink">
+        {changes.length === 1 ? "One field changed" : `${changes.length} fields changed`}
+      </p>
+      {changes.map((change) => (
+        <div key={change.field} className="border-b border-line px-4 py-3 last:border-b-0">
+          <p className="text-[13px] font-medium text-ink">{change.field}</p>
+          <p className="mt-[2px] text-[13px] text-muted line-through">{change.from}</p>
+          <p className="text-[13px] text-ink">{change.to}</p>
         </div>
       ))}
     </div>

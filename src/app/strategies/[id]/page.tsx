@@ -190,10 +190,7 @@ export default async function StrategyPage({ params }: PageProps<"/strategies/[i
           <div className="mt-6">
             <ReviseForm
               strategyId={strategy.id}
-              name={strategy.name}
-              description={strategy.description ?? ""}
-              hypothesis={head.hypothesisText ?? ""}
-              definition={head.definition as StrategyDefinition}
+              versionNo={head.versionNo}
               catalogue={catalogue}
             />
           </div>
