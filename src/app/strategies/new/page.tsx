@@ -1,26 +1,36 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
 import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
-import { loadCatalogue } from "@/server/market-data/catalogue";
 import { currentIdentity } from "@/server/identity";
-import { NewStrategyForm } from "./NewStrategyForm";
+import { loadCatalogue } from "@/server/market-data/catalogue";
+
+import { CompileChat } from "./CompileChat";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Authoring a strategy, and there is only one way in.
+ *
+ * The hand-filled form that used to live here is gone as of 23 Sep 2026. It was
+ * not removed because it was broken — it worked, and `ReviseForm` still uses
+ * the same component to edit an existing version. It was removed because
+ * offering both made the compiler look like a shortcut past the six mandatory
+ * components rather than the way to reach them, and a user who suspects the
+ * fast path is the lesser one will take the slow path and resent it.
+ *
+ * Nothing about the guarantees changes. `compileStrategy` proposes, the user
+ * reviews every rule and presses save, and `createStrategy` validates exactly
+ * what it always validated. The compiler is a better keyboard, not a lower bar.
+ */
 export default async function NewStrategyPage() {
   const identity = await currentIdentity();
   if (!identity?.user) redirect("/");
   if (!hasAcknowledgedRisk(identity.user)) redirect(nextPath(identity.user));
 
-  // No user id needed here — this page only renders the form. Ownership is
-  // stamped by `createStrategy`, which resolves the caller itself rather than
-  // trusting an id sent from the client.
-
-  // Fetched here rather than from the client: a Server Component read is one
-  // less roundtrip, and the same list is what the action validates against.
+  // Read here rather than from the client: the same list the compiler is shown
+  // is the one `createStrategy` validates against, so the two cannot drift.
   const catalogue = await loadCatalogue();
 
   return (
@@ -29,24 +39,11 @@ export default async function NewStrategyPage() {
       <div className="flex flex-1 flex-col px-5 pb-[calc(29px+env(safe-area-inset-bottom))]">
         <h1 className="mt-[24px] text-[20px] font-semibold text-ink">New strategy</h1>
         <p className="mt-[6px] text-[14px] text-muted">
-          Rules, then the hypothesis you intend to test. Both are recorded before any result
-          exists — that ordering is the point.
+          Describe the idea in plain English. It compiles what you say — it will not pick
+          instruments for you, and it asks rather than inventing anything you leave out.
         </p>
-        <Link
-          href="/strategies/new/chat"
-          className="mt-5 flex flex-col rounded-[8px] border border-brand px-4 py-4"
-        >
-          <span className="text-[15px] font-semibold text-ink">Describe it in plain English</span>
-          <span className="mt-[2px] text-[13px] text-muted">
-            The compiler turns a sentence into the same six components this form asks for, and
-            asks about anything you leave out.
-          </span>
-        </Link>
-
-        <p className="mt-6 text-[13px] font-medium uppercase text-muted">Or fill it in yourself</p>
-
-        <div className="mt-3">
-          <NewStrategyForm catalogue={catalogue} />
+        <div className="mt-6">
+          <CompileChat catalogue={catalogue} />
         </div>
       </div>
     </AppShell>

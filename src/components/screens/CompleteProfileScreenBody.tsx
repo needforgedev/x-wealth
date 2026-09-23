@@ -12,23 +12,34 @@ import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { TextField } from "@/components/ui/TextField";
 
 /**
- * Complete Profile is drawn the same on both the Investor and Advisor pages —
- * an investor continues to the onboarding questions, an advisor to KYC.
+ * Complete Profile — name and email, and deliberately nothing else.
+ *
+ * ## Why there is no date of birth or gender here
+ *
+ * There were, until 23 Sep 2026: two `readOnly` fields carrying a chevron and a
+ * placeholder written to read as a value ("19-08-1998", "Male"). They held no
+ * state, saved nothing, and opened no picker. The screen looked complete and
+ * two of its five fields were decoration — the same failure as the hardcoded
+ * "Raj Bansal" profile, and invisible to CI for the same reason: this file
+ * imports no schema.
+ *
+ * They were removed rather than wired up, which is the part worth recording.
+ * **Neither has a column**, in the live schema or in `CLAUDE.md` §9, and no
+ * feature reads age or gender — the KYC that once justified them went with W2.
+ * Date of birth is PII that §12 requires encrypted at rest, access-logged and
+ * kept out of every log and error message. Collecting it to satisfy a form
+ * layout would buy that obligation and nothing else.
  */
 type Placeholders = {
   firstName: string;
   lastName: string;
   email: string;
-  dob: string;
-  gender: string;
 };
 
 const DEFAULT_PLACEHOLDERS: Placeholders = {
   firstName: "Yash",
   lastName: "Bhardwaj",
   email: "you@example.com",
-  dob: "19-08-1998",
-  gender: "Male",
 };
 
 export function CompleteProfileScreenBody({
@@ -124,13 +135,6 @@ export function CompleteProfileScreenBody({
             placeholder={placeholders.email}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-          />
-          <TextField label="DOB" trailing="chevron" readOnly placeholder={placeholders.dob} />
-          <TextField
-            label="Gender"
-            trailing="chevron"
-            readOnly
-            placeholder={placeholders.gender}
           />
         </div>
 
