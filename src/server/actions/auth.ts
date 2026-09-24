@@ -89,8 +89,10 @@ export async function verifyOtp(
    * is indistinguishable from a genuinely wrong code. Deciding here keeps the
    * behaviour predictable: in development, this exact code always works.
    *
-   * `isDevAuthEnabled()` is false in production, so this whole branch is dead
-   * code there.
+   * `isDevAuthEnabled()` is false in a production build unless
+   * `DEV_AUTH_ALLOW_IN_PRODUCTION` is set, which the demo deploy does set —
+   * see `src/server/auth/dev-session.ts` for why, and for why that is only
+   * acceptable somewhere with no real data behind it.
    */
   if (isDevAuthEnabled() && code === devOtpCode()) {
     const userId = await findOrCreateUserByPhone(phone);

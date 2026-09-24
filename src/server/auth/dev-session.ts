@@ -22,28 +22,44 @@ import { supabasePhone } from "@/domain/phone";
  * working provider or the Admin API, and we hold neither. So the session is a
  * signed cookie this module owns, and `currentUser()` falls back to it.
  *
- * ## Why this is not a security hole
+ * ## When it is on
  *
- * Three independent conditions must all hold, and the last one cannot be true
- * in a deployed build:
+ * Three conditions must all hold:
  *
  *   1. `DEV_AUTH_BYPASS=true`
  *   2. `DEV_AUTH_SECRET` set
- *   3. `NODE_ENV !== "production"`
+ *   3. `NODE_ENV !== "production"` — **or** `DEV_AUTH_ALLOW_IN_PRODUCTION=true`
  *
- * The cookie is HMAC-signed, so even with the flag on by accident a forged
- * cookie is rejected. **Delete this file once SMS is configured** — it is
- * scaffolding, not architecture.
+ * The third condition used to be `NODE_ENV` alone, which made the bypass
+ * unreachable in any deployed build. That is still the default. The override
+ * exists because the deployed Supabase project has no SMS provider either, so
+ * without it the deploy is a dead end — `sendOtp` fails, no session is ever
+ * issued, and the landing page is the only reachable screen.
+ *
+ * ## The override is a real hole, not a mitigated one
+ *
+ * With it set, anyone who finds the URL signs in as any phone number using a
+ * four-digit code. The HMAC signature defends the session cookie against
+ * forgery; it does nothing about the front door, because the front door is
+ * deliberately open.
+ *
+ * Acceptable only on a throwaway demo deployment with no real data behind it.
+ * Never set `DEV_AUTH_ALLOW_IN_PRODUCTION` on anything a real user touches.
+ *
+ * **Delete this file once SMS is configured** — it is scaffolding, not
+ * architecture.
  */
 
 const COOKIE = "xw_dev_session";
 const MAX_AGE_SECONDS = 60 * 60 * 12;
 
 export function isDevAuthEnabled(): boolean {
+  const allowedHere =
+    process.env.NODE_ENV !== "production" ||
+    process.env.DEV_AUTH_ALLOW_IN_PRODUCTION === "true";
+
   return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.DEV_AUTH_BYPASS === "true" &&
-    Boolean(process.env.DEV_AUTH_SECRET)
+    allowedHere && process.env.DEV_AUTH_BYPASS === "true" && Boolean(process.env.DEV_AUTH_SECRET)
   );
 }
 
