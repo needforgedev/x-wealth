@@ -46,9 +46,11 @@ INSERT INTO backtest_runs(id, strategy_version_id, period_start, period_end,
    '2020-01-01', '2024-01-01', 10000000, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb);
 
 INSERT INTO forward_tests(id, strategy_version_id, declared_hypothesis,
-                          initial_capital_paise, cost_model, planned_sessions) VALUES
+                          initial_capital_paise, cost_model, planned_sessions,
+                          engine_version, fill_model) VALUES
   ('f0000000-0000-0000-0000-0000000000ff', 'c0000000-0000-0000-0000-0000000000ff',
-   'verification fixture', 10000000, '{}'::jsonb, 60);
+   'verification fixture', 10000000, '{}'::jsonb, 60,
+   'backtest-2', 'STOP_FIRST_WHEN_AMBIGUOUS');
 
 
 -- Each check: the statement must raise. If it does not, we raise instead. -----
@@ -97,6 +99,14 @@ SELECT pg_temp.must_reject('change cost_model while RUNNING',
   $$update forward_tests set cost_model='{"z":1}'::jsonb where id='f0000000-0000-0000-0000-0000000000ff'$$);
 SELECT pg_temp.must_reject('change initial capital while RUNNING',
   $$update forward_tests set initial_capital_paise=1 where id='f0000000-0000-0000-0000-0000000000ff'$$);
+-- W6-17. The engine pin freezes with everything else: a window whose recorded
+-- engine could be edited after it opened would let a divergence between the
+-- ledger and the replay be resolved by rewriting the claim about what produced
+-- it, which is the one repair this system must never offer.
+SELECT pg_temp.must_reject('change engine_version while RUNNING',
+  $$update forward_tests set engine_version='backtest-99' where id='f0000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('change fill_model while RUNNING',
+  $$update forward_tests set fill_model='INTRABAR_1M' where id='f0000000-0000-0000-0000-0000000000ff'$$);
 SELECT pg_temp.must_reject('RUNNING -> DRAFT (backwards)',
   $$update forward_tests set status='DRAFT' where id='f0000000-0000-0000-0000-0000000000ff'$$);
 
@@ -125,8 +135,14 @@ SELECT pg_temp.must_reject('negative quantity',
   $$insert into paper_trades(forward_test_id,symbol,side,qty,entry_price,entry_at)
     values ('f0000000-0000-0000-0000-0000000000ff','NSE:INFY','BUY',-5,10.0000,now())$$);
 SELECT pg_temp.must_reject('non-positive initial capital',
+  $$insert into forward_tests(strategy_version_id,declared_hypothesis,initial_capital_paise,cost_model,planned_sessions,engine_version,fill_model)
+    values ('c0000000-0000-0000-0000-0000000000ff','h',0,'{}'::jsonb,60,'backtest-2','STOP_FIRST_WHEN_AMBIGUOUS')$$);
+-- A window that does not say which engine opened it is not a record of
+-- anything. NOT NULL with no default, so the omission fails rather than
+-- inheriting a vintage nobody chose (migration 0015).
+SELECT pg_temp.must_reject('forward test with no engine pin',
   $$insert into forward_tests(strategy_version_id,declared_hypothesis,initial_capital_paise,cost_model,planned_sessions)
-    values ('c0000000-0000-0000-0000-0000000000ff','h',0,'{}'::jsonb,60)$$);
+    values ('c0000000-0000-0000-0000-0000000000ff','h',10000000,'{}'::jsonb,60)$$);
 
 
 -- The sections that stood here verified the distribution schema: signal

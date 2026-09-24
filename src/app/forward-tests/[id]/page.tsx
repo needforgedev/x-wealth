@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { forwardTests } from "@/db/schema";
 import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
-import { EquityCurve } from "@/components/advisor/EquityCurve";
+import { EquityCurve } from "@/components/EquityCurve";
 import type { CostModel } from "@/domain/costs";
 import {
   ForwardTestError,
@@ -42,7 +42,11 @@ export const dynamic = "force-dynamic";
  * finished one is the single most misleading thing this page could do.
  *
  * **Nothing is characterised.** No score, no grade, no "on track". We report
- * what happened and let the reader judge it (§5.6).
+ * what happened and let the reader judge it (`CLAUDE.md` §8.7).
+ *
+ * The reader is the author and nobody else. §8.5 makes a strategy private to
+ * the person who wrote it, so every figure here is theirs alone — this screen
+ * has no audience to be published to.
  *
  * The three statuses are genuinely different screens rather than one screen
  * with fields blanked out:
@@ -52,7 +56,7 @@ export const dynamic = "force-dynamic";
  *     published record; re-deriving it would risk showing something other than
  *     what was recorded
  *   - ABANDONED — the ledger only. Replaying would walk the sessions that
- *     printed *after* the advisor stopped and report trades from a window they
+ *     printed *after* the author stopped and report trades from a window they
  *     had withdrawn from, which is a claim nobody made.
  */
 export default async function ForwardTestConsolePage({
@@ -126,8 +130,8 @@ export default async function ForwardTestConsolePage({
         )}
 
         {/* The ledger, in every status. It is the append-only record the figures
-            above are checked against, and it is the same rows an investor will
-            eventually see on the public profile. */}
+            above are checked against, and it is visible to its author and to
+            nobody else (§8.5). */}
         <h2 className="mt-8 text-[13px] font-semibold uppercase tracking-wide text-muted">
           Paper-trade ledger ({recorded.length})
         </h2>
@@ -151,7 +155,7 @@ export default async function ForwardTestConsolePage({
             <p className="mt-2 text-[13px] text-muted">
               Abandoning is a legitimate outcome and the honest one when a hypothesis has been
               answered early. It is permanent, it keeps everything recorded so far, and the reason
-              you give is published alongside it — an abandoned test is the denominator that makes a
+              you give is recorded alongside it — an abandoned test is the denominator that makes a
               completed one mean something.
             </p>
             <div className="mt-3">
@@ -175,7 +179,18 @@ export default async function ForwardTestConsolePage({
           />
           <Row label="Window" value={`${test.plannedSessions} trading sessions`} />
           <Row label="Costs" value={`${costModel.segment}, ${costModel.slippagePercent}% slippage`} />
+          {/* W6-17. Frozen like everything above it, and shown for the reason
+              the backtest page shows its methodology: a track record nobody can
+              attribute to an engine is a number, not a record. */}
+          <Row label="Engine" value={test.engineVersion} />
+          <Row label="Fill model" value={describeFillModel(test.fillModel)} />
         </dl>
+        <p className="mt-3 text-[12px] text-muted">
+          The engine is pinned for the life of this window, not tracked. A test that ran under one
+          set of fill rules is never reinterpreted under a later set — if the engine changes while
+          this is open, the evening job stops rather than re-deriving your history under rules you
+          did not commit to.
+        </p>
 
         <p className="mt-8 text-[12px] text-muted">
           Every figure on this page is net of brokerage, STT, stamp duty, exchange and SEBI charges,
@@ -205,7 +220,7 @@ function RunningBody({
   // What the evening job would write if it ran now. Normally empty — the job
   // runs after the loader, so the ledger is current. Non-empty means either the
   // job has not run since the last session, or the two disagree about history,
-  // and an advisor reading a curve is entitled to know which.
+  // and someone reading a curve is entitled to know which.
   const diff = diffAgainstLedger(progress.trades, progress.openPositions, recorded);
   const pending = diff.toOpen.length + diff.toEnter.length + diff.toClose.length;
 
@@ -484,8 +499,8 @@ function AbandonedBody({
           {test.abandonReason ?? "No reason was recorded."}
         </p>
         <p className="mt-3 text-[12px] text-muted">
-          Permanent and public. It stays on the profile beside every completed test, because the
-          count of abandoned windows is what makes a published one mean anything.
+          Permanent, and yours alone. It stays on your ledger beside every completed test, because
+          the count of abandoned windows is what makes a completed one mean anything.
         </p>
       </section>
 
@@ -513,8 +528,7 @@ function AbandonedBody({
       <p className="mt-3 text-[13px] text-muted">
         There is no return percentage and no equity curve for an abandoned window. The window never
         ran its length, so a percentage would be a claim about a period the test withdrew from — and
-        replaying the sessions that printed afterwards would report trades this advisor never
-        committed to.
+        replaying the sessions that printed afterwards would report trades you never committed to.
       </p>
     </>
   );
@@ -733,6 +747,22 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function isoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+/**
+ * Plain language, because the enum name is a claim about this person's money.
+ *
+ * Someone reading their own track record has to be able to tell which rule
+ * resolved a session that touched both their stop and their target — those two
+ * paths give opposite outcomes, and a user who does not know which one was
+ * assumed does not understand the number above.
+ */
+function describeFillModel(model: string): string {
+  return model === "STOP_FIRST_WHEN_AMBIGUOUS"
+    ? "Stop first when a session hit both levels (pessimistic)"
+    : model === "INTRABAR_1M"
+      ? "Resolved inside the session with 1-minute bars"
+      : model;
 }
 
 function signed(value: number): string {

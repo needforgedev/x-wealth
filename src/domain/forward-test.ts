@@ -9,6 +9,7 @@ import { accountForTrade, chargesForLeg, type CostModel } from "./costs";
 import type { Bar } from "./market-data";
 import type { PriceTicks } from "./money";
 import type { IsoDate, TradingCalendar } from "./session";
+import type { FillModel } from "./session-step";
 import type { StrategyDefinition } from "./strategy";
 
 /**
@@ -94,6 +95,14 @@ export type ForwardTestParams = {
   plannedSessions: number;
   /** The first session the window covers. */
   startedOn: IsoDate;
+  /**
+   * The intrabar policy pinned on the row, frozen with everything else.
+   *
+   * Passed rather than read from the constant because this window is replayed
+   * every evening for a quarter and the engine can change inside that. Omitted
+   * only by callers that predate the pin — see `W6-17`.
+   */
+  fillModel?: FillModel;
 };
 
 export type ForwardTestProgress = {
@@ -365,6 +374,7 @@ export function evaluateForwardTest(input: {
     lotSizes: input.lotSizes,
     tradeFrom: params.startedOn,
     closeOutOn: finalSessionDate,
+    fillModel: params.fillModel,
   });
 
   return {

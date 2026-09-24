@@ -53,14 +53,14 @@ export async function runBacktestForVersion(input: {
         versionId: strategyVersions.id,
         definition: strategyVersions.definition,
         strategyId: strategies.id,
-        advisorId: strategies.userId,
+        ownerId: strategies.userId,
       })
       .from(strategyVersions)
       .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
       .where(eq(strategyVersions.id, input.strategyVersionId))
       .limit(1);
 
-    if (!row || row.advisorId !== user.id) {
+    if (!row || row.ownerId !== user.id) {
       throw new NotAuthorisedError("No such strategy version.");
     }
 

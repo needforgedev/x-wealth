@@ -6,6 +6,8 @@ import type { CostModel } from "@/domain/costs";
 import { diffAgainstLedger, ForwardTestError } from "@/domain/forward-test";
 import type { MarketDataSource } from "@/domain/market-data";
 import { priceTicks, priceToString } from "@/domain/money";
+import { ENGINE_VERSION } from "@/domain/backtest";
+import { FILL_MODEL, type FillModel } from "@/domain/session-step";
 import type { StrategyDefinition } from "@/domain/strategy";
 import { replayForwardTest } from "./replay";
 
@@ -29,10 +31,22 @@ export type RunningTest = {
   plannedSessions: number;
   initialCapitalPaise: number;
   costModel: unknown;
+  /** Frozen at RUNNING — see `W6-17` and migration `0015`. */
+  engineVersion: string;
+  fillModel: FillModel;
 };
 
 export type AdvanceResult =
   | { status: "HALTED"; reason: string; unexplained: number }
+  /**
+   * The engine cannot run this window's pinned policy at all.
+   *
+   * Distinct from HALTED because nothing is wrong with the record — the ledger
+   * and the engine have not disagreed, they have not been compared. Replaying
+   * under the wrong policy to find out would write plausible trades produced by
+   * rules this window never ran under, to a table that cannot take them back.
+   */
+  | { status: "UNRUNNABLE"; reason: string }
   /** Started, but no session has printed inside the window yet. */
   | { status: "PENDING"; startedOn: string }
   | {
@@ -67,6 +81,25 @@ export async function advanceForwardTest(input: {
   }
   const startedOn = test.startedAt.toISOString().slice(0, 10);
 
+  /**
+   * Refuse before replaying, not after diffing (`W6-17`).
+   *
+   * A window pinned to a policy this engine does not implement cannot be
+   * re-derived at all. Replaying anyway would resolve every ambiguous session
+   * under the wrong rule, and the diff would then report the difference as
+   * `unexplained` — which reads as *the ledger is corrupt* when what actually
+   * happened is *the engine changed*. Two very different problems, and only one
+   * of them is the record's fault.
+   */
+  if (test.fillModel !== FILL_MODEL) {
+    return {
+      status: "UNRUNNABLE",
+      reason:
+        `pinned to fill model ${test.fillModel}, which this engine (${ENGINE_VERSION}) ` +
+        `does not implement — it runs ${FILL_MODEL}`,
+    };
+  }
+
   // The same call the console makes, so what gets written and what gets shown
   // cannot disagree. See `replay.ts`.
   let progress;
@@ -78,6 +111,7 @@ export async function advanceForwardTest(input: {
       costModel: test.costModel as CostModel,
       definition,
       source,
+      fillModel: test.fillModel,
     });
   } catch (error) {
     // Every forward test is in this state on the day it is created: the window

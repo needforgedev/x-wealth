@@ -22,6 +22,8 @@ config({ path: ".env.local" });
 const { and, eq, sql } = await import("drizzle-orm");
 const { db } = await import("@/db");
 const { forwardTests, strategies, strategyVersions, users } = await import("@/db/schema");
+const { ENGINE_VERSION } = await import("@/domain/backtest");
+const { FILL_MODEL } = await import("@/domain/session-step");
 const { ledgerCounts, ledgerForwardTests } = await import("@/server/queries/ledger");
 
 let failures = 0;
@@ -134,6 +136,8 @@ try {
         initialCapitalPaise: 10_000_000,
         costModel: {} as never,
         plannedSessions: 60,
+        engineVersion: ENGINE_VERSION,
+        fillModel: FILL_MODEL,
         status: "DRAFT",
       })
       .returning({ id: forwardTests.id });
@@ -146,6 +150,8 @@ try {
         initialCapitalPaise: 10_000_000,
         costModel: {} as never,
         plannedSessions: 60,
+        engineVersion: ENGINE_VERSION,
+        fillModel: FILL_MODEL,
         status: "DRAFT",
       })
       .returning({ id: forwardTests.id });
@@ -158,6 +164,8 @@ try {
         initialCapitalPaise: 10_000_000,
         costModel: {} as never,
         plannedSessions: 60,
+        engineVersion: ENGINE_VERSION,
+        fillModel: FILL_MODEL,
         status: "DRAFT",
       });
 

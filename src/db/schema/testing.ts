@@ -2,6 +2,7 @@ import { index, integer, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core"
 
 import {
   createdAt,
+  fillModel,
   forwardTestOutcome,
   forwardTestStatus,
   paise,
@@ -82,6 +83,24 @@ export const forwardTests = pgTable(
 
     initialCapitalPaise: paise("initial_capital_paise").notNull(),
     costModel: jsonb("cost_model").$type<CostModel>().notNull(),
+
+    /**
+     * The engine vintage this window is pinned to, frozen with everything else.
+     *
+     * `backtest_runs` records its engine inside `methodology`; a forward test
+     * needs the same fact in a column because it is *re-derived every evening*
+     * rather than computed once. `advanceForwardTest` replays the whole window
+     * and diffs against `paper_trades`, so an engine whose fills have changed
+     * produces trades the ledger does not contain — and `paper_trades` is
+     * append-only, which means there is no correction to apply, only a halt.
+     *
+     * Pinning does not freeze the engine's behaviour; it records which
+     * behaviour was in force, so a completed result is interpretable and a
+     * mid-window divergence is diagnosable instead of mysterious. See
+     * `plan.md` W6-17.
+     */
+    engineVersion: text("engine_version").notNull(),
+    fillModel: fillModel("fill_model").notNull(),
 
     /** Minimum window in trading sessions. Configurable — see blocker B-7. */
     plannedSessions: integer("planned_sessions").notNull(),

@@ -33,6 +33,8 @@ const { forwardTests, paperTrades, strategies, strategyVersions } = await import
 const { advanceForwardTest } = await import("@/server/forward-test/advance");
 const { liveEndOfDaySource } = await import("@/server/market-data/db-store");
 const { ZERO_BROKERAGE, nseEquityDelivery } = await import("@/domain/costs");
+const { ENGINE_VERSION } = await import("@/domain/backtest");
+const { FILL_MODEL } = await import("@/domain/session-step");
 const { starterDefinition } = await import("@/domain/strategy");
 const { formatPaise } = await import("@/domain/money");
 
@@ -93,6 +95,8 @@ try {
             "A 20/50 crossover on large caps produces more winners than losers over the window.",
           initialCapitalPaise: definition.initialCapitalPaise,
           costModel,
+          engineVersion: ENGINE_VERSION,
+          fillModel: FILL_MODEL,
           plannedSessions: PLANNED_SESSIONS,
         })
         .returning({ id: forwardTests.id });
@@ -112,6 +116,8 @@ try {
         plannedSessions: PLANNED_SESSIONS,
         initialCapitalPaise: definition.initialCapitalPaise,
         costModel,
+        engineVersion: ENGINE_VERSION,
+        fillModel: FILL_MODEL,
       };
 
       const readLedger = () =>

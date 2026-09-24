@@ -45,14 +45,15 @@ export function RiskForm() {
         <div className="mt-8 flex flex-col gap-5">
           <Checkbox checked={loss} onCheckedChange={setLoss}>
             <span className="text-ink">Trading carries the risk of loss, including total loss.</span>{" "}
-            Money you put at risk on a signal is money you can lose in full.
+            Money you put at risk on a strategy you built here is money you can lose in full.
           </Checkbox>
 
           <Checkbox checked={notAdvice} onCheckedChange={setNotAdvice}>
-            <span className="text-ink">Signals are not personal advice.</span> X-Wealth is
-            infrastructure — it does not produce research, does not advise, never places an order
-            and never holds your money. You act in your own broker account, and every decision is
-            yours.
+            <span className="text-ink">This is a tool, not advice.</span> X-Wealth never forms a
+            view on any security. It compiles the idea you describe into rules, tests those rules,
+            and reports what happened. It does not produce research, does not recommend, never
+            places an order and never holds your money. The strategy is yours, and so is every
+            decision that follows from it.
           </Checkbox>
 
           <Checkbox checked={pastPerformance} onCheckedChange={setPastPerformance}>
@@ -63,9 +64,10 @@ export function RiskForm() {
         </div>
 
         <p className="mt-6 rounded-[6px] bg-surface-alt p-4 text-[13px] text-muted">
-          Advisors on this platform are SEBI-registered Research Analysts whose registration we
-          verify. That is a check on who they are — it is not an endorsement of any strategy, and
-          X-Wealth never grades performance.
+          Your strategies are private to you. Nothing you build here is shown to another user, and
+          nothing another user builds is shown to you — there are no shared strategies on this
+          platform and no rankings of any kind. X-Wealth reports what your rules did and never
+          grades them.
         </p>
 
         {error && (

@@ -146,8 +146,9 @@ try {
                   '{}'::jsonb, '{}'::jsonb, '{}'::jsonb);
         insert into forward_tests(id, strategy_version_id, declared_hypothesis,
                                   initial_capital_paise, cost_model, planned_sessions,
-                                  status, started_at)
-          values ('${F}', '${F}', 'h', 10000000, '{}'::jsonb, 60, 'RUNNING', now());
+                                  engine_version, fill_model, status, started_at)
+          values ('${F}', '${F}', 'h', 10000000, '{}'::jsonb, 60,
+                  'backtest-2', 'STOP_FIRST_WHEN_AMBIGUOUS', 'RUNNING', now());
         insert into paper_trades(id, forward_test_id, symbol, side, qty, entry_price, entry_at)
           values ('${F}', '${F}', 'NSE:RELIANCE', 'BUY', 10, 2500.0000, now());
         insert into ai_interactions(id, user_id, context_type, input_snapshot, output,

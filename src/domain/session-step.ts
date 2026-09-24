@@ -119,6 +119,16 @@ export type SessionInput = {
    * session, which is a round trip that can only pay away the charges.
    */
   isFinalSession: boolean;
+
+  /**
+   * Which intrabar policy to resolve an ambiguous session under.
+   *
+   * Optional so that every existing caller and test keeps today's behaviour,
+   * and so the parameter reads as what it is — a seam, not a feature. A
+   * forward test passes the value pinned on its row; a backtest passes the
+   * current constant.
+   */
+  fillModel?: FillModel;
 };
 
 export type OpenedPosition = {
@@ -159,8 +169,32 @@ export type SessionOutcome = {
   cashPaise: number;
 };
 
+/**
+ * Raised when a caller asks for a policy this engine cannot run.
+ *
+ * Refusing is the whole point. A forward test pinned to `INTRABAR_1M` and
+ * replayed by an engine that only knows the pessimistic rule would produce
+ * plausible trades under the wrong policy, write them to an append-only ledger,
+ * and report a return nobody can correct. Loud beats plausible.
+ */
+export class FillModelUnavailableError extends Error {
+  readonly requested: FillModel;
+
+  constructor(requested: FillModel) {
+    super(
+      `this engine cannot resolve sessions under ${requested}; it implements ${FILL_MODEL} only`,
+    );
+    this.requested = requested;
+  }
+}
+
 export function advanceSession(input: SessionInput): SessionOutcome {
   const { bar, definition, costModel, isFinalSession } = input;
+
+  // Checked before anything is computed, so a refusal cannot leave half a
+  // session applied.
+  const fillModel = input.fillModel ?? FILL_MODEL;
+  if (fillModel !== FILL_MODEL) throw new FillModelUnavailableError(fillModel);
 
   let position = input.position;
   let cashPaise = input.cashPaise;

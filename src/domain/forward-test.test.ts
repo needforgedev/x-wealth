@@ -13,6 +13,7 @@ import {
 import { ZERO_BROKERAGE, nseEquityDelivery, type CostModel } from "./costs";
 import { ohlcBars, type OhlcRow } from "./market-data-fixture";
 import { positionValue, priceFromString } from "./money";
+import { FillModelUnavailableError } from "./session-step";
 import { starterDefinition, type StrategyDefinitionV2 } from "./strategy";
 
 const FREE: CostModel = {
@@ -503,5 +504,60 @@ describe("summariseLedger", () => {
     expect(summary).toMatchObject({ closed: 0, open: 0, unpriced: 0, realisedNetPnlPaise: 0 });
     expect(summary.firstEntryDate).toBeNull();
     expect(summary.lastExitDate).toBeNull();
+  });
+});
+
+/**
+ * The engine pin — `plan.md` W6-17.
+ *
+ * A forward test is not computed once; it is re-derived every evening for a
+ * quarter, which means the engine underneath it can change halfway through a
+ * window that is already running. These assert the two halves of the guard:
+ * the pinned policy is what the replay actually runs under, and a policy this
+ * engine cannot run is refused rather than approximated.
+ */
+describe("the pinned fill model", () => {
+  it("reaches the engine instead of the module constant", () => {
+    // The pin is only worth having if it is the value that decides behaviour.
+    // Passing the policy the engine does implement must be indistinguishable
+    // from passing nothing — otherwise threading it through changed the
+    // numbers, and every stored result predates the change.
+    const pinned = evaluateForwardTest({
+      params: params({ fillModel: "STOP_FIRST_WHEN_AMBIGUOUS" }),
+      series: series(),
+    });
+    const unpinned = evaluateForwardTest({ params: params(), series: series() });
+
+    expect(pinned.trades).toEqual(unpinned.trades);
+    expect(pinned.metrics).toEqual(unpinned.metrics);
+    expect(pinned.standing.netReturnPercent).toBe(unpinned.standing.netReturnPercent);
+  });
+
+  it("refuses a policy this engine cannot run, rather than approximating it", () => {
+    // The dangerous version of this failure is silent. An engine that ignored
+    // an unknown pin would resolve every ambiguous session under the wrong
+    // rule, produce entirely plausible trades, and write them to a ledger that
+    // cannot take them back. INTRABAR_1M is not implemented (W5-17), so asking
+    // for it has to be an error and not a fallback.
+    expect(() =>
+      evaluateForwardTest({
+        params: params({ fillModel: "INTRABAR_1M" }),
+        series: series(),
+      }),
+    ).toThrow(FillModelUnavailableError);
+  });
+
+  it("names the policy it was asked for, so the failure is diagnosable", () => {
+    // The message is read by whoever is working out why an evening job stopped.
+    // "unsupported fill model" sends them to the engine; naming the value sends
+    // them to the row that pinned it.
+    try {
+      evaluateForwardTest({ params: params({ fillModel: "INTRABAR_1M" }), series: series() });
+      expect.unreachable("should have refused");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FillModelUnavailableError);
+      expect((error as FillModelUnavailableError).requested).toBe("INTRABAR_1M");
+      expect((error as Error).message).toContain("STOP_FIRST_WHEN_AMBIGUOUS");
+    }
   });
 });

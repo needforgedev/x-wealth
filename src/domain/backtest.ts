@@ -5,7 +5,9 @@ import type { Bar } from "./market-data";
 import type { IsoDate } from "./session";
 import {
   advanceSession,
+  FILL_MODEL,
   type ExitReason,
+  type FillModel,
   type PendingOrder,
   type PositionState,
 } from "./session-step";
@@ -198,6 +200,24 @@ export type BacktestInput = {
    * because today is the most recent session anyone has data for.
    */
   closeOutOn?: IsoDate | null;
+
+  /**
+   * Which intrabar policy to resolve ambiguous sessions under.
+   *
+   * Defaults to `FILL_MODEL`, which is what a backtest wants — a fresh run is
+   * always produced by the engine that is current, and it records that in its
+   * methodology.
+   *
+   * A forward test passes the value pinned on its row instead, because it is
+   * replayed every evening for a quarter and the engine underneath it can
+   * change mid-window. Passing the pin rather than reading the constant is what
+   * makes `W5-17` a branch on a recorded value instead of a global switch that
+   * silently reinterprets every window ever run.
+   *
+   * Only one policy is implemented; `advanceSession` refuses the other rather
+   * than quietly running the wrong one.
+   */
+  fillModel?: FillModel;
 };
 
 type SymbolState = {
@@ -313,6 +333,7 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
         costModel,
         lotSize: state.lotSize,
         isFinalSession: isFinalDate,
+        fillModel: input.fillModel ?? FILL_MODEL,
       });
 
       if (step.closed) {

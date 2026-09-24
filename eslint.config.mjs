@@ -10,8 +10,9 @@ const eslintConfig = defineConfig([
 
   /**
    * `CLAUDE.md` §8.7 — no platform-authored performance claims, anywhere,
-   * including seed data and demo content (§10). See the rule for what it does
-   * not cover: comments, and model output at runtime.
+   * including seed data and demo content (§10) — and §8.5, no copy telling a
+   * user their strategies reach anyone else. See the rule for what it does not
+   * cover: comments, and model output at runtime.
    *
    * Scoped to `src/` because this is about shipped copy. Migrations and scripts
    * are neither read by a user nor rendered anywhere.

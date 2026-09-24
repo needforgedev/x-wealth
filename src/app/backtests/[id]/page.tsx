@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
-import { EquityCurve } from "@/components/advisor/EquityCurve";
+import { EquityCurve } from "@/components/EquityCurve";
 import type { ExecutedTrade } from "@/domain/backtest";
 import type { FillModel } from "@/domain/session-step";
 import type { CostModel } from "@/domain/costs";
@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
  * visible as a gap. What does not exist anywhere is a gross figure *on its
  * own*, or a toggle that produces one. And there is
  * no score, grade, rating or verdict: we report what happened and never
- * characterise it (§5.6). A reader who wants to know whether this is good
+ * characterise it (§8.7). A reader who wants to know whether this is good
  * decides that themselves, which is why the methodology and the caveats are on
  * the page rather than behind a link.
  */
@@ -302,7 +302,7 @@ export default async function BacktestRunPage({ params }: PageProps<"/backtests/
           Methodology
         </h2>
         <p className="mt-2 text-[13px] text-muted">
-          Published with the run, and permanent. Two runs over the same dates against data pulled
+          Recorded with the run, and permanent. Two runs over the same dates against data pulled
           months apart are different runs — the vintage below is what tells them apart.
         </p>
 

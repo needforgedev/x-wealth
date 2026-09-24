@@ -2,6 +2,7 @@ import { evaluateForwardTest, type ForwardTestProgress } from "@/domain/forward-
 import type { CostModel } from "@/domain/costs";
 import type { Bar, MarketDataSource } from "@/domain/market-data";
 import type { IsoDate } from "@/domain/session";
+import type { FillModel } from "@/domain/session-step";
 import { resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { toSymbol } from "@/domain/symbol";
 
@@ -46,6 +47,15 @@ export async function replayForwardTest(input: {
   costModel: CostModel;
   definition: StrategyDefinition;
   source: MarketDataSource;
+  /**
+   * The intrabar policy pinned on the row (`W6-17`).
+   *
+   * Passed through rather than left to the engine's constant: this function is
+   * the only route into a replay, so it is the one place that can guarantee a
+   * window is re-derived under the policy it was started with rather than
+   * whichever one happens to be current tonight.
+   */
+  fillModel?: FillModel;
 }): Promise<ForwardTestProgress> {
   return evaluateForwardTest({
     params: {
@@ -54,6 +64,7 @@ export async function replayForwardTest(input: {
       initialCapitalPaise: input.initialCapitalPaise,
       plannedSessions: input.plannedSessions,
       startedOn: input.startedOn,
+      fillModel: input.fillModel,
     },
     series: await loadSeries(input.definition, input.source),
   });

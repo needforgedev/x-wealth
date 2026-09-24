@@ -22,7 +22,7 @@ export async function listRunningForwardTests() {
       strategyId: strategies.id,
       strategyName: strategies.name,
       versionNo: strategyVersions.versionNo,
-      advisorId: strategies.userId,
+      ownerId: strategies.userId,
     })
     .from(forwardTests)
     .innerJoin(strategyVersions, eq(strategyVersions.id, forwardTests.strategyVersionId))

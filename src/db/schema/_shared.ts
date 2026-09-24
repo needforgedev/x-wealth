@@ -62,6 +62,18 @@ export const forwardTestStatus = pgEnum("forward_test_status", [
  */
 export const forwardTestOutcome = pgEnum("forward_test_outcome", ["COMPLETED", "ABANDONED"]);
 
+/**
+ * How a session that reached both the stop and the target was resolved.
+ * Mirrors `FillModel` in `src/domain/session-step.ts`.
+ *
+ * Stored on a forward test rather than assumed, for the reason `backtest_runs`
+ * stores its whole methodology: a run is only reproducible if it says which
+ * engine produced it. A forward test needs it more, not less — a backtest is
+ * one computation over fixed history, while a forward test is re-derived every
+ * evening for a quarter, and the engine underneath it can change mid-window.
+ */
+export const fillModel = pgEnum("fill_model", ["STOP_FIRST_WHEN_AMBIGUOUS", "INTRABAR_1M"]);
+
 export const tradeSide = pgEnum("trade_side", ["BUY", "SELL"]);
 
 /**

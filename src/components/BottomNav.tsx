@@ -24,13 +24,17 @@ export type NavTab = {
  *
  * `ADVISOR_TABS` went with them. It only ever re-pointed the first two entries
  * at `/advisor/chats` and `/advisor/signals`; with those deleted it was the
- * same list twice, and no advisor page renders this bar anyway.
+ * same list twice, and no page renders a second variant anyway.
  *
- * This is a holding shape, not a designed one. W24 collapses the two personas
- * into one user, at which point the trader's primary destination is their
- * strategy list and this bar gets rebuilt around it.
+ * `INVESTOR_TABS` is now `DEFAULT_TABS`: W24 collapsed the two personas into
+ * one user, so a name that distinguishes this list from a persona that no
+ * longer exists describes the product we abandoned.
+ *
+ * This is still a holding shape, not a designed one — the trader's primary
+ * destination is their strategy list, and this bar has not been rebuilt around
+ * it yet.
  */
-export const INVESTOR_TABS: ReadonlyArray<NavTab> = [
+export const DEFAULT_TABS: ReadonlyArray<NavTab> = [
   { href: "/portfolio", label: "Portfolio", src: "/assets/nav-portfolio.svg", width: 14, height: 14 },
   { href: "/profile", label: "Profile", src: "/assets/nav-profile.svg", width: 16, height: 16 },
 ];
@@ -43,7 +47,7 @@ export const INVESTOR_TABS: ReadonlyArray<NavTab> = [
  * how the account screens render it.
  */
 export function BottomNav({
-  tabs = INVESTOR_TABS,
+  tabs = DEFAULT_TABS,
   avatarSrc,
 }: {
   tabs?: ReadonlyArray<NavTab>;

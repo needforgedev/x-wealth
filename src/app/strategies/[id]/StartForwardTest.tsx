@@ -56,7 +56,7 @@ export function StartForwardTest({
       <p className="mt-2 text-[13px] text-muted">
         The rules, the capital, the cost model, the window and the sentence below all freeze the
         moment this starts, and the database refuses to change them afterwards. Revising anything
-        means abandoning this test and starting another — and the abandoned one stays on your public
+        means abandoning this test and starting another — and the abandoned one stays on your own
         record. The window opens on the next session, never today, so no part of it is already
         known.
       </p>

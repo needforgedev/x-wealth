@@ -5,9 +5,11 @@ import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
 import { forwardTests, strategies, strategyVersions } from "@/db/schema";
+import { ENGINE_VERSION } from "@/domain/backtest";
 import { ZERO_BROKERAGE, nseEquityDelivery } from "@/domain/costs";
 import { DEFAULT_PLANNED_SESSIONS, SESSION_WINDOW } from "@/domain/forward-test";
 import { NSE_CALENDAR, addSessions } from "@/domain/session";
+import { FILL_MODEL } from "@/domain/session-step";
 import {
   resolveDefinition,
   validateStrategyDefinition,
@@ -84,14 +86,14 @@ export async function startForwardTest(input: {
         versionId: strategyVersions.id,
         definition: strategyVersions.definition,
         strategyId: strategies.id,
-        advisorId: strategies.userId,
+        ownerId: strategies.userId,
       })
       .from(strategyVersions)
       .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
       .where(eq(strategyVersions.id, input.strategyVersionId))
       .limit(1);
 
-    if (!row || row.advisorId !== user.id) {
+    if (!row || row.ownerId !== user.id) {
       throw new NotAuthorisedError("No such strategy version.");
     }
 
@@ -133,6 +135,17 @@ export async function startForwardTest(input: {
             brokerage: ZERO_BROKERAGE,
             slippagePercent: SLIPPAGE_PERCENT,
           }),
+          /**
+           * The engine this window is pinned to (`W6-17`).
+           *
+           * Read from the constants at the moment of creation, so the row
+           * records the engine that actually opened it rather than whichever
+           * one is current when someone comes to read the result. Frozen by
+           * the trigger from the next statement onward, like every other
+           * parameter here.
+           */
+          engineVersion: ENGINE_VERSION,
+          fillModel: FILL_MODEL,
           plannedSessions,
         })
         .returning({ id: forwardTests.id });
@@ -162,11 +175,15 @@ export async function startForwardTest(input: {
  * Stop a running test, permanently and visibly.
  *
  * Abandonment is a first-class outcome, not a failure state to be tidied away.
- * It stays on the advisor's public record with the reason they gave — that is
- * the denominator that makes a completed test mean anything (§8.2, PRD §5.6).
+ * It stays on the author's own permanent record with the reason they gave —
+ * that is the denominator that makes a completed test mean anything (§8.1).
  *
- * The reason is required and the advisor is told it will be published, because
- * a reason nobody sees is not a reason, it is a note to self.
+ * **"Permanent" here never means "published."** §8.5 keeps a strategy and
+ * everything derived from it private to the person who wrote it; the record
+ * this lands on is the iteration ledger they alone can read (§7.14). The reason
+ * is required, and the author is told up front that it is permanent, because a
+ * reason written after the fact is a reconstruction and reconstructions are
+ * kind to the reconstructor.
  */
 export async function abandonForwardTest(input: {
   forwardTestId: string;
@@ -176,7 +193,7 @@ export async function abandonForwardTest(input: {
   if (reason.length < 10) {
     return {
       ok: false,
-      error: "Say why you are abandoning this test. It stays on your public record with the reason.",
+      error: "Say why you are abandoning this test. It stays on your own record with the reason.",
     };
   }
 

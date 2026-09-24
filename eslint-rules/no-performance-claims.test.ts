@@ -59,6 +59,24 @@ describe("no-performance-claims", () => {
           code: 'const heading = "Trade quality";',
           options: [{ allow: ["Trade quality"] }],
         },
+
+        // --- §8.5: the uses of "public" that are correct ------------------
+        //
+        // Every one of these is real in this codebase, and a rule that failed
+        // on them would be switched off within a week. This is why the
+        // publication list is phrases rather than the bare word.
+        { code: 'const filter = { schemaFilter: ["public"] };' },
+        { code: 'const key = "publishable key";' },
+        { code: 'const doc = "The AI layer\'s public surface.";' },
+        { code: 'const copy = "2026-01-26 is a public holiday, so no session prints";' },
+        { code: 'const copy = "Permanent, and yours alone.";' },
+        { code: 'const copy = "It stays on your own record with the reason.";' },
+
+        // The sentence that states the §8.5 guarantee names the same nouns as
+        // the sentence that breaks it. Flagging the denial would get the whole
+        // rule suppressed, so the verb is required.
+        { code: 'const copy = "nothing another user builds is shown to you";' },
+        { code: 'const copy = "Your strategies are private to you.";' },
       ],
 
       invalid: [
@@ -89,6 +107,39 @@ describe("no-performance-claims", () => {
         {
           code: "const el = <p>Our certified analysts</p>;",
           errors: [{ messageId: "claim" }],
+        },
+
+        // --- §8.5: the copy that actually shipped -------------------------
+        //
+        // Verbatim from the screens this rule was extended to catch. Each one
+        // told a user their private work had an audience.
+        {
+          code: 'const c = "Published with the test, permanently, on your public profile.";',
+          errors: [{ messageId: "publication" }],
+        },
+        {
+          code: 'const c = "the abandoned one stays on your public record";',
+          errors: [{ messageId: "publication" }],
+        },
+        {
+          code: 'const c = "Permanent and public. It stays on the profile beside every test";',
+          errors: [{ messageId: "publication" }],
+        },
+        {
+          code: 'const c = "the reason you give is published alongside it";',
+          errors: [{ messageId: "publication" }],
+        },
+
+        // --- the shapes it would drift back in as -------------------------
+        { code: 'const c = "Publicly visible to other traders";', errors: [{ messageId: "publication" }] },
+        { code: 'const c = "Top strategies leaderboard";', errors: [{ messageId: "publication" }] },
+        { code: 'const c = "Browse the strategy marketplace";', errors: [{ messageId: "publication" }] },
+        { code: 'const c = "Enable copy-trading";', errors: [{ messageId: "publication" }] },
+        { code: 'const c = "Share your strategy with a friend";', errors: [{ messageId: "publication" }] },
+        { code: 'const c = "Your subscribers will be notified";', errors: [{ messageId: "publication" }] },
+        {
+          code: "const el = <p>Other users can see this once you start</p>;",
+          errors: [{ messageId: "publication" }],
         },
       ],
     });

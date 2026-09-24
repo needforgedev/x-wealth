@@ -117,6 +117,25 @@ const ATTACKS: Attack[] = [
     run: (tx, ids) =>
       tx`update forward_tests set cost_model = '{"segment":"FREE"}'::jsonb where id = ${ids.testId}`,
   },
+  /**
+   * W6-17. The two attacks that matter most once the engine changes.
+   *
+   * When a replay stops reproducing the ledger, the cheapest way to make the
+   * disagreement disappear is to edit the row's claim about which engine
+   * produced it — at which point the record says a window ran under rules it
+   * never ran under, and nothing downstream can tell. Both are frozen by the
+   * same trigger clause as `cost_model`, for the same reason.
+   */
+  {
+    name: "restamp the engine version of a RUNNING test",
+    run: (tx, ids) =>
+      tx`update forward_tests set engine_version = 'backtest-99' where id = ${ids.testId}`,
+  },
+  {
+    name: "switch the fill model of a RUNNING test",
+    run: (tx, ids) =>
+      tx`update forward_tests set fill_model = 'INTRABAR_1M' where id = ${ids.testId}`,
+  },
   {
     name: "walk a RUNNING test back to DRAFT",
     run: (tx, ids) => tx`update forward_tests set status = 'DRAFT' where id = ${ids.testId}`,
@@ -225,9 +244,10 @@ try {
       const [test] = await tx`
         insert into forward_tests
           (strategy_version_id, status, declared_hypothesis, initial_capital_paise,
-           cost_model, planned_sessions, started_at, planned_end_at)
+           cost_model, planned_sessions, engine_version, fill_model, started_at, planned_end_at)
         values (${v1.id}, 'RUNNING', 'Oversold readings revert within fifteen sessions.',
-                50000000, '{"segment":"NSE_EQUITY_DELIVERY"}'::jsonb, 60, now(), now() + interval '90 days')
+                50000000, '{"segment":"NSE_EQUITY_DELIVERY"}'::jsonb, 60,
+                'backtest-2', 'STOP_FIRST_WHEN_AMBIGUOUS', now(), now() + interval '90 days')
         returning id`;
 
       const [openTrade] = await tx`

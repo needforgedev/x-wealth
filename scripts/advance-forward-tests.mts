@@ -88,6 +88,20 @@ for (const row of running) {
       continue;
     }
 
+    /**
+     * Counted as halted so the job fails, because it needs a human — but named
+     * separately in the output, because it is a different fault (`W6-17`).
+     * HALTED means the ledger and the engine disagree about what happened;
+     * UNRUNNABLE means they were never compared, since this engine cannot run
+     * the policy the window was pinned to. Reporting both as "halted" would
+     * send someone looking for a corrupt ledger that is perfectly intact.
+     */
+    if (result.status === "UNRUNNABLE") {
+      halted++;
+      console.log(`  ${label}: UNRUNNABLE — ${result.reason}`);
+      continue;
+    }
+
     const sessions = `session ${result.sessionsElapsed}/${row.test.plannedSessions}`;
     const net = result.netReturnPercent;
     const changed = result.entriesWritten + result.exitsWritten;

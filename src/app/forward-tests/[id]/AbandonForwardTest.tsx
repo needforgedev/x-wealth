@@ -14,9 +14,10 @@ import { abandonForwardTest } from "@/server/actions/forward-test";
  * an optional note produces empty reasons, and a reason nobody wrote is not a
  * reason. It is required by the action too — this is only the affordance.
  *
- * The advisor is told the reason gets published *before* they write it, not
- * after they submit. Someone who would phrase it differently knowing it is
- * public should find that out while they can still phrase it differently.
+ * The author is told the reason is permanent *before* they write it, not after
+ * they submit. Someone who would phrase it differently knowing it can never be
+ * edited should find that out while they can still phrase it differently.
+ * Permanent, not published — §8.5 keeps it private to them.
  *
  * There is no undo, and no code path to one. `forward_tests` only moves
  * forward, and the trigger refuses ABANDONED → anything.
@@ -48,7 +49,7 @@ export function AbandonForwardTest({ forwardTestId }: { forwardTestId: string })
         Why are you stopping?
       </label>
       <p id="abandon-reason-help" className="mt-1 text-[12px] text-muted">
-        Published with the test, permanently, on your public profile. Written now rather than
+        Recorded with the test, permanently, on your own iteration ledger. Written now rather than
         reconstructed later.
       </p>
       <textarea
