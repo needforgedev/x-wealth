@@ -64,6 +64,8 @@ export type OpenRouterConfig = {
   readonly model?: string;
   /** Injected by tests. Defaults to global fetch. */
   readonly fetchImpl?: typeof fetch;
+  /** Injected by tests, so retry coverage does not spend real seconds. */
+  readonly retryDelayMs?: number;
   /** The JSON Schema the response must satisfy, per context. */
   readonly schemaFor: (call: AiCall) => { name: string; strict: boolean; schema: unknown } | null;
 };
@@ -103,6 +105,12 @@ export function openRouterProvider(config: OpenRouterConfig): AiProvider {
 
       let lastError = "";
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        // Immediate retries re-ask whichever upstream just failed — observed
+        // as three empty 200-bodies in a row on the free tier. A short pause
+        // gives the router time to fail over to a different provider.
+        if (attempt > 1) {
+          await new Promise((r) => setTimeout(r, attempt * (config.retryDelayMs ?? 2_000)));
+        }
         let response: Response;
         try {
           response = await doFetch(ENDPOINT, {
@@ -135,9 +143,19 @@ export function openRouterProvider(config: OpenRouterConfig): AiProvider {
           continue;
         }
 
-        const payload = (await response.json().catch(() => null)) as ChatResponse | null;
+        // Read as text first, so a non-JSON body — free-tier capacity pages
+        // and gateway errors arrive as HTML with a 200 — leaves a diagnosable
+        // snippet behind instead of the word "unparseable" and nothing else.
+        const raw = await response.text().catch(() => "");
+        let payload: ChatResponse | null = null;
+        try {
+          payload = JSON.parse(raw) as ChatResponse;
+        } catch {
+          lastError = `non-JSON envelope: ${raw.slice(0, 200) || "(empty body)"}`;
+          continue;
+        }
         if (!payload || payload.error) {
-          lastError = payload?.error?.message ?? "unparseable response envelope";
+          lastError = payload?.error?.message ?? "empty response envelope";
           continue;
         }
 

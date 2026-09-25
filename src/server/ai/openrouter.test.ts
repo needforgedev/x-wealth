@@ -21,7 +21,7 @@ const good = { model: "nvidia/nemotron-3-super-120b-a12b:free", choices: [{ mess
 describe("the OpenRouter provider", () => {
   it("returns parsed structured output", async () => {
     const fetchImpl = vi.fn(async () => respond(good));
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: fetchImpl as never, schemaFor });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: fetchImpl as never, schemaFor });
 
     const res = await provider.complete(CALL);
     expect(res.output.kind).toBe("COMPILE");
@@ -36,7 +36,7 @@ describe("the OpenRouter provider", () => {
   it("records the model that actually answered, not the one requested", async () => {
     const fetchImpl = vi.fn(async () => respond({ ...good, model: "some/fallback-model" }));
     const provider = openRouterProvider({
-      apiKey: "k", model: "nvidia/nemotron-3-super-120b-a12b:free",
+      apiKey: "k", retryDelayMs: 0, model: "nvidia/nemotron-3-super-120b-a12b:free",
       fetchImpl: fetchImpl as never, schemaFor,
     });
     expect((await provider.complete(CALL)).modelId).toBe("some/fallback-model");
@@ -53,20 +53,20 @@ describe("the OpenRouter provider", () => {
       .mockResolvedValueOnce(respond({ choices: [{ message: { content: "[]" } }] }))
       .mockResolvedValueOnce(respond(good));
 
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: fetchImpl as never, schemaFor });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: fetchImpl as never, schemaFor });
     expect((await provider.complete(CALL)).output.kind).toBe("COMPILE");
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("gives up rather than returning something unparseable", async () => {
     const fetchImpl = vi.fn(async () => respond({ choices: [{ message: { content: "not json" } }] }));
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: fetchImpl as never, schemaFor });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: fetchImpl as never, schemaFor });
     await expect(provider.complete(CALL)).rejects.toBeInstanceOf(AiProviderError);
   });
 
   it("does not retry a request that cannot become valid", async () => {
     const fetchImpl = vi.fn(async () => respond({ error: { message: "bad key" } }, 401));
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: fetchImpl as never, schemaFor });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: fetchImpl as never, schemaFor });
     await expect(provider.complete(CALL)).rejects.toBeInstanceOf(AiProviderError);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -75,7 +75,7 @@ describe("the OpenRouter provider", () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(respond({ error: { message: "slow down" } }, 429))
       .mockResolvedValueOnce(respond(good));
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: fetchImpl as never, schemaFor });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: fetchImpl as never, schemaFor });
     expect((await provider.complete(CALL)).output.kind).toBe("COMPILE");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
@@ -86,13 +86,13 @@ describe("the OpenRouter provider", () => {
    * rather than at the reader.
    */
   it("refuses a context with no output schema", async () => {
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: vi.fn() as never, schemaFor: () => null });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: vi.fn() as never, schemaFor: () => null });
     await expect(provider.complete(CALL)).rejects.toThrow(/No output schema/);
   });
 
   it("sends the schema and a zero temperature", async () => {
     const fetchImpl = vi.fn(async () => respond(good));
-    const provider = openRouterProvider({ apiKey: "k", fetchImpl: fetchImpl as never, schemaFor });
+    const provider = openRouterProvider({ apiKey: "k", retryDelayMs: 0, fetchImpl: fetchImpl as never, schemaFor });
     await provider.complete(CALL);
 
     const body = JSON.parse((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
