@@ -26,7 +26,8 @@
     "check-forward-tests": "tsx scripts/check-forward-test-health.mts",
     "verify-adversarial": "tsx scripts/verify-adversarial.mts",
     "verify-ledger": "tsx scripts/verify-ledger.mts",
-    "verify-compile": "tsx scripts/verify-compile.mts"
+    "verify-compile": "tsx scripts/verify-compile.mts",
+    "verify-post-mortem": "tsx scripts/verify-post-mortem.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

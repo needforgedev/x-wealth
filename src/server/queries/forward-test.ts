@@ -1,7 +1,7 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, notIlike } from "drizzle-orm";
 
 import { db } from "@/db";
-import { forwardTests, paperTrades, strategies, strategyVersions } from "@/db/schema";
+import { aiInteractions, forwardTests, paperTrades, strategies, strategyVersions } from "@/db/schema";
 
 /**
  * Reads for the forward-test screens and the evening job.
@@ -76,4 +76,37 @@ export async function listForwardTestsForStrategy(strategyId: string, userId: st
     .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
     .where(and(eq(strategyVersions.strategyId, strategyId), eq(strategies.userId, userId)))
     .orderBy(desc(forwardTests.createdAt));
+}
+
+/**
+ * The most recent recorded post-mortem for one test, scoped to its owner.
+ *
+ * Reads the interaction log rather than a table of its own: the log *is* the
+ * record (§8.6 — input, output, model, prompt version), and a second copy
+ * would be a second truth. Stub rows are skipped — `metadata.live` exists so a
+ * screen never mistakes scripted output for a model's, and the same rule holds
+ * when reading back.
+ */
+export async function latestPostMortemForTest(forwardTestId: string, userId: string) {
+  const [row] = await db()
+    .select({
+      id: aiInteractions.id,
+      output: aiInteractions.output,
+      modelId: aiInteractions.modelId,
+      promptVersion: aiInteractions.promptVersion,
+      createdAt: aiInteractions.createdAt,
+    })
+    .from(aiInteractions)
+    .where(
+      and(
+        eq(aiInteractions.forwardTestId, forwardTestId),
+        eq(aiInteractions.userId, userId),
+        eq(aiInteractions.contextType, "POST_MORTEM"),
+        notIlike(aiInteractions.modelId, "stub%"),
+      ),
+    )
+    .orderBy(desc(aiInteractions.createdAt))
+    .limit(1);
+
+  return row ?? null;
 }

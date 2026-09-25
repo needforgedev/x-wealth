@@ -18,11 +18,17 @@ import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
 import { describeCondition,
   describeSizing,
   resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
+import { validatePostMortem, type PostMortemView } from "@/domain/post-mortem";
 import { currentIdentity } from "@/server/identity";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
 import { replayForwardTest } from "@/server/forward-test/replay";
-import { loadForwardTestForUser, tradesForForwardTest } from "@/server/queries/forward-test";
+import {
+  latestPostMortemForTest,
+  loadForwardTestForUser,
+  tradesForForwardTest,
+} from "@/server/queries/forward-test";
 import { AbandonForwardTest } from "./AbandonForwardTest";
+import { RunPostMortem } from "./RunPostMortem";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +97,14 @@ export default async function ForwardTestConsolePage({
   const isLive = test.status === "RUNNING" || test.status === "DRAFT";
   const live = isLive ? await replayLive({ test, definition, costModel }) : null;
 
+  // The recorded post-mortem, re-gated on every read. A stored output that no
+  // longer passes the no-verdict check renders as absent rather than as an
+  // exception — the button reappears and a fresh call goes through the gate.
+  const postMortem =
+    test.status === "COMPLETED"
+      ? await loadPostMortem({ test, userId: user.id, closedRows: ledger.closed })
+      : null;
+
   return (
     <AppShell>
       <AppBar backHref={`/strategies/${row.strategyId}`} />
@@ -122,7 +136,7 @@ export default async function ForwardTestConsolePage({
         {test.status === "ABANDONED" ? (
           <AbandonedBody test={test} ledger={ledger} />
         ) : test.status === "COMPLETED" ? (
-          <CompletedBody test={test} />
+          <CompletedBody test={test} postMortem={postMortem} />
         ) : live?.kind === "READY" ? (
           <RunningBody test={test} progress={live.progress} recorded={recorded} />
         ) : (
@@ -401,7 +415,113 @@ function RunningBody({
 // COMPLETED — the recorded result, not a fresh derivation
 // ---------------------------------------------------------------------------
 
-function CompletedBody({ test }: { test: TestRow }) {
+type RecordedPostMortem = {
+  view: PostMortemView;
+  modelId: string;
+  createdAt: Date;
+};
+
+/**
+ * The recorded post-mortem, if a valid one exists. `plan.md` W7-13.
+ *
+ * Validated again on every read, not trusted because it was validated once at
+ * write time: the gate's vocabulary tightens over releases, and a stored
+ * narrative that a newer gate refuses should disappear from the screen rather
+ * than survive as a grandfathered verdict.
+ */
+async function loadPostMortem(input: {
+  test: TestRow;
+  userId: string;
+  closedRows: number;
+}): Promise<RecordedPostMortem | null> {
+  const row = await latestPostMortemForTest(input.test.id, input.userId);
+  if (!row) return null;
+
+  const tradeCount =
+    (input.test.finalResults as { tradeCount?: number } | null)?.tradeCount ?? input.closedRows;
+
+  const validated = validatePostMortem(row.output, { tradeCount });
+  return validated.status === "VALID"
+    ? { view: validated.view, modelId: row.modelId, createdAt: row.createdAt }
+    : null;
+}
+
+const HYPOTHESIS_STATUS_COPY: Record<PostMortemView["status"], string> = {
+  SUPPORTED: "The record supports the declared hypothesis",
+  NOT_SUPPORTED: "The record does not support the declared hypothesis",
+  UNTESTED: "This window did not test the declared hypothesis",
+};
+
+/**
+ * §5 step 6, rendered. The hypothesis line leads because it qualifies the
+ * headline number the same way the attack report qualifies a backtest — a
+ * +4% window that never tested its hypothesis must not read as support.
+ */
+function PostMortemSection({ postMortem }: { postMortem: RecordedPostMortem }) {
+  const { view } = postMortem;
+
+  return (
+    <section className="mt-6 rounded-[8px] border border-line p-4">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted">Post-mortem</h2>
+
+      <p className="mt-2 text-[14px] font-semibold text-ink">
+        {HYPOTHESIS_STATUS_COPY[view.status]}
+      </p>
+      <p className="mt-1 text-[13px] leading-[1.5] text-ink">{view.observed}</p>
+
+      <h3 className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        What the record shows
+      </h3>
+      <ul className="mt-2 flex flex-col gap-3">
+        {view.findings.map((finding, i) => (
+          <li key={i} className="text-[13px] leading-[1.5]">
+            <span className="text-ink">{finding.observation}</span>
+            <span className="mt-[2px] block text-[12px] text-muted">{finding.evidence}</span>
+          </li>
+        ))}
+      </ul>
+      {view.withheldFindings > 0 && (
+        <p className="mt-2 text-[12px] text-muted">
+          {view.withheldFindings} further{" "}
+          {view.withheldFindings === 1 ? "observation was" : "observations were"} withheld for
+          carrying no figures. The full answer stays on the interaction log; only what cites the
+          record is shown.
+        </p>
+      )}
+
+      <p className="mt-4 border-t border-divider-soft pt-3 text-[13px] leading-[1.5] text-ink">
+        {view.summary}
+      </p>
+
+      {view.unanswered.length > 0 && (
+        <>
+          <h3 className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            What this window could not settle
+          </h3>
+          <ul className="mt-2 list-disc pl-5 text-[13px] text-muted">
+            {view.unanswered.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <p className="mt-4 text-[12px] text-muted">
+        Written by {postMortem.modelId} on {isoDate(postMortem.createdAt)}, from this window&rsquo;s
+        recorded facts. It describes what happened; it grades nothing and changes nothing, and what
+        to do next — take live, revise, or abandon — stays your decision.
+      </p>
+    </section>
+  );
+}
+
+function CompletedBody({
+  test,
+  postMortem,
+}: {
+  test: TestRow;
+  postMortem: RecordedPostMortem | null;
+}) {
   const results = test.finalResults as
     | (RecordedResults & { equityCurve?: Array<{ date: string; equityPaise: number }> })
     | null;
@@ -446,6 +566,14 @@ function CompletedBody({ test }: { test: TestRow }) {
         session was closed at that session&rsquo;s close — nothing is left unresolved, because an
         unclosed position would let a losing trade sit off the books indefinitely.
       </p>
+
+      {/* Above the curve and the metrics for the attack report's reason
+          (W18-09): the hypothesis line qualifies every figure below it. */}
+      {postMortem ? (
+        <PostMortemSection postMortem={postMortem} />
+      ) : (
+        <RunPostMortem forwardTestId={test.id} />
+      )}
 
       <h2 className="mt-8 text-[13px] font-semibold uppercase tracking-wide text-muted">
         Equity curve

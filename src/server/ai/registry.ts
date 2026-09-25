@@ -1,4 +1,5 @@
 import { COMPILE_JSON_SCHEMA } from "@/domain/compile";
+import { POST_MORTEM_JSON_SCHEMA } from "@/domain/post-mortem";
 
 import { openRouterProvider } from "./openrouter";
 import type { AiCall, AiProvider } from "./provider";
@@ -48,6 +49,8 @@ function schemaFor(call: AiCall) {
   switch (call.contextType) {
     case "COMPILE":
       return COMPILE_JSON_SCHEMA;
+    case "POST_MORTEM":
+      return POST_MORTEM_JSON_SCHEMA;
     default:
       return null;
   }

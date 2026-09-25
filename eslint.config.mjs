@@ -29,8 +29,12 @@ const eslintConfig = defineConfig([
            * Exemptions, each of which is a decision rather than an oversight.
            * A word earns a place here by being factual about a *state* rather
            * than a judgement about performance.
+           *
+           * `quality` — the literal inside `post-mortem.ts`'s BANNED_KEYS
+           * array, which exists to *refuse* the word in model output. The one
+           * place the word may appear is the list that bans it.
            */
-          allow: [],
+          allow: ["quality"],
         },
       ],
     },

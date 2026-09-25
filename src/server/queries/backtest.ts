@@ -66,3 +66,27 @@ export async function listRunsForStrategy(strategyId: string, userId: string) {
     .where(and(eq(strategyVersions.strategyId, strategyId), eq(strategies.userId, userId)))
     .orderBy(asc(strategyVersions.versionNo), desc(backtestRuns.createdAt));
 }
+
+/**
+ * The most recent run of one version, scoped to its owner.
+ *
+ * The post-mortem reads it for the forward-versus-backtest comparison — the
+ * product's central claim — so it wants the latest statement the engine made
+ * about this exact rule set, not the best one and not an aggregate.
+ */
+export async function latestRunForVersion(strategyVersionId: string, userId: string) {
+  const [row] = await db()
+    .select({
+      periodStart: backtestRuns.periodStart,
+      periodEnd: backtestRuns.periodEnd,
+      results: backtestRuns.results,
+    })
+    .from(backtestRuns)
+    .innerJoin(strategyVersions, eq(strategyVersions.id, backtestRuns.strategyVersionId))
+    .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
+    .where(and(eq(backtestRuns.strategyVersionId, strategyVersionId), eq(strategies.userId, userId)))
+    .orderBy(desc(backtestRuns.createdAt))
+    .limit(1);
+
+  return row ?? null;
+}
