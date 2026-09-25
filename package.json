@@ -27,7 +27,8 @@
     "verify-adversarial": "tsx scripts/verify-adversarial.mts",
     "verify-ledger": "tsx scripts/verify-ledger.mts",
     "verify-compile": "tsx scripts/verify-compile.mts",
-    "verify-post-mortem": "tsx scripts/verify-post-mortem.mts"
+    "verify-post-mortem": "tsx scripts/verify-post-mortem.mts",
+    "verify-critique": "tsx scripts/verify-critique.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

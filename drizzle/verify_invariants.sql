@@ -232,6 +232,15 @@ SELECT pg_temp.must_reject('a version authored off an interaction nobody acted o
 SELECT pg_temp.must_allow('a post-mortem of its own forward test',
   $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,forward_test_id)
     values ('a0000000-0000-0000-0000-0000000000ff','POST_MORTEM','{}'::jsonb,'{"kind":"POST_MORTEM"}'::jsonb,'stub-0','verify/1','f0000000-0000-0000-0000-0000000000ff')$$);
+-- W7, migration 0016. A critique of nothing is a finding nobody can trace to
+-- what it criticised. 0013 left this unconstrained while W7's shape was
+-- unsettled; the critique shipped, so the guess became a fact.
+SELECT pg_temp.must_reject('a critique of nothing',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version)
+    values ('a0000000-0000-0000-0000-0000000000ff','CRITIQUE','{}'::jsonb,'{"kind":"CRITIQUE"}'::jsonb,'stub-0','verify/1')$$);
+SELECT pg_temp.must_allow('a critique of its own strategy version',
+  $$insert into ai_interactions(user_id,context_type,input_snapshot,output,model_id,prompt_version,strategy_version_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','CRITIQUE','{}'::jsonb,'{"kind":"CRITIQUE"}'::jsonb,'stub-0','verify/1','c0000000-0000-0000-0000-0000000000ff')$$);
 
 \echo '--- adversarial_reports: a report cannot be softened (7.7, 8.7) ---'
 -- W18-07. The report saying a backtest should not be believed is exactly the

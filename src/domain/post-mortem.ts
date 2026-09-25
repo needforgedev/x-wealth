@@ -39,6 +39,7 @@
  * in plain language — not to compute anything, because a model that computes
  * is a model that miscomputes plausibly.
  */
+import { JUDGEMENT, bannedKeyIssues, type GateIssue } from "./ai-gate";
 import type { IsoDate } from "./session";
 
 /** Bumped whenever the schema or the prompt changes. Recorded on every row. */
@@ -263,22 +264,7 @@ export const POST_MORTEM_JSON_SCHEMA = {
 // The gate — model output in, proven view out
 // ---------------------------------------------------------------------------
 
-/**
- * Words that turn an observation into a grade. The same list the adversarial
- * suite's tests enforce on our own code (W18-10) — held here at runtime,
- * because this producer is a model and a test cannot see what it will say
- * tomorrow.
- */
-const JUDGEMENT = /\b(weak|strong|bad|good|poor|excellent|promising|solid|impressive|terrible)\b/i;
-
-/**
- * Key names that must not exist anywhere in the output, whatever their value.
- * The schema already refuses them via `additionalProperties: false`; this is
- * the second lock, so a schema edit cannot quietly open the door §8.7 closes.
- */
-const BANNED_KEYS = ["score", "grade", "rating", "rank", "stars", "verdict", "quality"];
-
-export type PostMortemIssue = { readonly path: string; readonly message: string };
+export type PostMortemIssue = GateIssue;
 
 export type PostMortemResult =
   | { readonly status: "VALID"; readonly view: PostMortemView }
@@ -303,18 +289,7 @@ export function validatePostMortem(output: unknown, record: PostMortemRecord): P
   if (output.kind !== "POST_MORTEM") flag("kind", "wrong kind");
 
   // No key anywhere may carry a grading name — walk the whole object.
-  const walkKeys = (value: unknown, path: string) => {
-    if (Array.isArray(value)) return value.forEach((v, i) => walkKeys(v, `${path}[${i}]`));
-    if (!isRecord(value)) return;
-    for (const [k, v] of Object.entries(value)) {
-      const lower = k.toLowerCase();
-      if (BANNED_KEYS.some((b) => lower.includes(b))) {
-        flag(`${path}.${k}`, "a grading field is not a shape this record can hold (§8.7)");
-      }
-      walkKeys(v, `${path}.${k}`);
-    }
-  };
-  walkKeys(output, "$");
+  issues.push(...bannedKeyIssues(output));
 
   const text = (value: unknown, path: string, min: number): string => {
     if (typeof value !== "string" || value.trim().length < min) {

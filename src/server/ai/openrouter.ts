@@ -46,6 +46,19 @@ const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
  */
 const MAX_ATTEMPTS = 3;
 
+/**
+ * The longest one attempt may hold the line open.
+ *
+ * Found the hard way on 25 Sep 2026: a critique call sat inside `fetch` for
+ * over six minutes with no timeout anywhere under it, which in production is a
+ * server action hanging in front of a user for as long as the platform allows.
+ * Free-tier capacity queues; a queue is indistinguishable from a hang from
+ * this side of the socket, and the difference does not matter to the person
+ * waiting. Two minutes is generous for a structured completion — after that,
+ * failing into the retry loop beats waiting indefinitely for either answer.
+ */
+const ATTEMPT_TIMEOUT_MS = 120_000;
+
 export type OpenRouterConfig = {
   readonly apiKey: string;
   readonly model?: string;
@@ -99,8 +112,16 @@ export function openRouterProvider(config: OpenRouterConfig): AiProvider {
               Authorization: `Bearer ${config.apiKey}`,
             },
             body: JSON.stringify(body),
+            signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
           });
         } catch (cause) {
+          // A timed-out attempt re-enters the loop like a 5xx: the queue may
+          // clear, and if it does not, the caller gets an error rather than a
+          // connection held open indefinitely.
+          if (cause instanceof Error && cause.name === "TimeoutError") {
+            lastError = `no response within ${ATTEMPT_TIMEOUT_MS / 1000}s`;
+            continue;
+          }
           throw new AiProviderError(`OpenRouter unreachable: ${String(cause)}`);
         }
 

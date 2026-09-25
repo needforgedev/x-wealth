@@ -13,10 +13,12 @@ import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
 import { describeCondition,
   describeSizing,
   resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
+import { validateCritique, type CritiqueView } from "@/domain/critique";
 import { currentIdentity } from "@/server/identity";
 import { latestReportForRun } from "@/server/queries/adversarial";
-import { loadRunForUser } from "@/server/queries/backtest";
+import { latestCritiqueForRun, loadRunForUser } from "@/server/queries/backtest";
 import { RunAttack } from "./RunAttack";
+import { RunCritique } from "./RunCritique";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,15 @@ export default async function BacktestRunPage({ params }: PageProps<"/backtests/
   if (!row) notFound();
 
   const attackReport = await latestReportForRun(id, user.id);
+
+  // Re-gated on every read, like the post-mortem: a stored narrative a
+  // stricter gate refuses disappears rather than surviving grandfathered.
+  const critiqueRow = await latestCritiqueForRun(id, user.id);
+  const critiqueGate = critiqueRow ? validateCritique(critiqueRow.output) : null;
+  const critique =
+    critiqueRow && critiqueGate?.status === "VALID"
+      ? { view: critiqueGate.view, modelId: critiqueRow.modelId, createdAt: critiqueRow.createdAt }
+      : null;
 
   const definition = row.definition as StrategyDefinition;
 
@@ -231,6 +242,15 @@ export default async function BacktestRunPage({ params }: PageProps<"/backtests/
           <Metric label="Fill model" value={FILL_MODEL_LABELS[methodology.execution.fillModel]} />
         </dl>
 
+        {/* Directly under the metrics it bounds. The attack report above asks
+            whether the numbers survive being attacked; this asks how much the
+            record can carry in the first place (§7.11). */}
+        {critique ? (
+          <CritiqueSection critique={critique} />
+        ) : (
+          <RunCritique backtestRunId={id} />
+        )}
+
         <h2 className="mt-8 text-[13px] font-semibold uppercase tracking-wide text-muted">
           Equity curve
         </h2>
@@ -387,6 +407,65 @@ const NOT_RECORDED = "Not recorded";
  * strategy with no losing session has an unmeasured Sortino rather than a
  * perfect one.
  */
+type RecordedCritique = {
+  view: CritiqueView;
+  modelId: string;
+  createdAt: Date;
+};
+
+/** §7.11 rendered: findings with their figures, limits stated, nothing graded. */
+function CritiqueSection({ critique }: { critique: RecordedCritique }) {
+  const { view } = critique;
+
+  return (
+    <section className="mt-8 rounded-[8px] border border-line p-4">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+        What limits these numbers
+      </h2>
+
+      <ul className="mt-2 flex flex-col gap-3">
+        {view.findings.map((finding, i) => (
+          <li key={i} className="text-[13px] leading-[1.5]">
+            <span className="text-ink">{finding.observation}</span>
+            <span className="mt-[2px] block text-[12px] text-muted">{finding.evidence}</span>
+          </li>
+        ))}
+      </ul>
+      {view.withheldFindings > 0 && (
+        <p className="mt-2 text-[12px] text-muted">
+          {view.withheldFindings} further{" "}
+          {view.withheldFindings === 1 ? "observation was" : "observations were"} withheld for
+          carrying no figures. The full answer stays on the interaction log; only what cites the
+          record is shown.
+        </p>
+      )}
+
+      <p className="mt-4 border-t border-divider-soft pt-3 text-[13px] leading-[1.5] text-ink">
+        {view.summary}
+      </p>
+
+      {view.limits.length > 0 && (
+        <>
+          <h3 className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            What this record cannot answer
+          </h3>
+          <ul className="mt-2 list-disc pl-5 text-[13px] text-muted">
+            {view.limits.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <p className="mt-4 text-[12px] text-muted">
+        Written by {critique.modelId} on {isoDate(critique.createdAt)}, from this run&rsquo;s
+        recorded figures. It describes what bounds the result; it grades nothing and changes
+        nothing.
+      </p>
+    </section>
+  );
+}
+
 function measured<T>(value: T | null | undefined, format: (value: T) => string): string {
   if (value === undefined) return NOT_RECORDED;
   if (value === null) return "Not measurable";

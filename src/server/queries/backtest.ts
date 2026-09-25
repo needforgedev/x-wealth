@@ -1,7 +1,7 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, notIlike, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { backtestRuns, strategies, strategyVersions } from "@/db/schema";
+import { aiInteractions, backtestRuns, strategies, strategyVersions } from "@/db/schema";
 
 /**
  * Reads for the backtest screens.
@@ -86,6 +86,39 @@ export async function latestRunForVersion(strategyVersionId: string, userId: str
     .innerJoin(strategies, eq(strategies.id, strategyVersions.strategyId))
     .where(and(eq(backtestRuns.strategyVersionId, strategyVersionId), eq(strategies.userId, userId)))
     .orderBy(desc(backtestRuns.createdAt))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/**
+ * The most recent recorded critique of one run, scoped to its owner.
+ *
+ * The run id lives inside `input_snapshot` rather than in a column — see
+ * migration `0016` for why the generic log grows no per-context FKs — so the
+ * lookup filters on the snapshot. Stub rows are skipped for the same reason
+ * `latestPostMortemForTest` skips them: scripted output must never be read
+ * back as a model's.
+ */
+export async function latestCritiqueForRun(runId: string, userId: string) {
+  const [row] = await db()
+    .select({
+      id: aiInteractions.id,
+      output: aiInteractions.output,
+      modelId: aiInteractions.modelId,
+      promptVersion: aiInteractions.promptVersion,
+      createdAt: aiInteractions.createdAt,
+    })
+    .from(aiInteractions)
+    .where(
+      and(
+        eq(aiInteractions.userId, userId),
+        eq(aiInteractions.contextType, "CRITIQUE"),
+        eq(sql`${aiInteractions.inputSnapshot}->>'backtestRunId'`, runId),
+        notIlike(aiInteractions.modelId, "stub%"),
+      ),
+    )
+    .orderBy(desc(aiInteractions.createdAt))
     .limit(1);
 
   return row ?? null;
