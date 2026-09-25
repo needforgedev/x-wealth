@@ -1,5 +1,6 @@
 import { COMPILE_JSON_SCHEMA } from "@/domain/compile";
 import { CRITIQUE_JSON_SCHEMA } from "@/domain/critique";
+import { HYPOTHESIS_JSON_SCHEMA } from "@/domain/hypothesis";
 import { POST_MORTEM_JSON_SCHEMA } from "@/domain/post-mortem";
 
 import { openRouterProvider } from "./openrouter";
@@ -52,6 +53,8 @@ function schemaFor(call: AiCall) {
       return COMPILE_JSON_SCHEMA;
     case "CRITIQUE":
       return CRITIQUE_JSON_SCHEMA;
+    case "HYPOTHESIS":
+      return HYPOTHESIS_JSON_SCHEMA;
     case "POST_MORTEM":
       return POST_MORTEM_JSON_SCHEMA;
     default:

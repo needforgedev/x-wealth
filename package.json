@@ -28,7 +28,8 @@
     "verify-ledger": "tsx scripts/verify-ledger.mts",
     "verify-compile": "tsx scripts/verify-compile.mts",
     "verify-post-mortem": "tsx scripts/verify-post-mortem.mts",
-    "verify-critique": "tsx scripts/verify-critique.mts"
+    "verify-critique": "tsx scripts/verify-critique.mts",
+    "verify-hypothesis": "tsx scripts/verify-hypothesis.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

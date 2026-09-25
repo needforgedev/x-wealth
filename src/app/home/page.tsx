@@ -95,6 +95,21 @@ export default async function HomePage() {
           <span className="shrink-0 text-[13px] font-semibold text-brand underline">Record</span>
         </Link>
 
+        {/* Step 1 of the loop, before any rules exist (§7.2). Placed above the
+            strategy list because that is its place in the order of work. */}
+        <Link
+          href="/workbench"
+          className="mt-6 flex items-center justify-between gap-3 rounded-[8px] border border-line p-4 hover:border-brand"
+        >
+          <span className="text-[14px] leading-[1.4] text-ink">
+            <span className="block font-semibold">Start with a hypothesis</span>
+            <span className="mt-1 block text-[13px] text-muted">
+              Say what you expect and what would prove you wrong — before rules, before data.
+            </span>
+          </span>
+          <span className="shrink-0 text-[13px] font-semibold text-brand underline">Workbench</span>
+        </Link>
+
         <div className="mt-6 flex items-center justify-between">
           <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
             Strategies
