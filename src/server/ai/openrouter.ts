@@ -100,6 +100,19 @@ export function openRouterProvider(config: OpenRouterConfig): AiProvider {
         // deterministic as the provider allows, or the same idea compiles into
         // two different rule sets and the user cannot tell which one they read.
         temperature: 0,
+        /**
+         * Bound the generation, deliberately. The default model reasons at
+         * length before answering, and on the congested free tier the upstream
+         * sheds long generations — observed as empty 200-bodies and named
+         * overloads that hit the analysis-heavy critique call while shorter
+         * calls sailed through around it (25–26 Sep 2026). None of our
+         * contexts needs a long chain of thought: every number the model may
+         * cite is already computed and in the prompt, so deep reasoning here
+         * is rumination, not analysis. Providers that do not know these
+         * parameters ignore them.
+         */
+        max_tokens: 12_000,
+        reasoning: { effort: "low", exclude: true },
         response_format: { type: "json_schema", json_schema: schema },
       };
 
@@ -169,7 +182,10 @@ export function openRouterProvider(config: OpenRouterConfig): AiProvider {
         try {
           parsed = JSON.parse(content);
         } catch {
-          lastError = "completion was not JSON";
+          // Quote what came back. "Not JSON" alone cannot distinguish a
+          // truncated object from reasoning leaked into the content, and the
+          // two have opposite fixes.
+          lastError = `completion was not JSON: ${content.slice(0, 160)}`;
           continue;
         }
 

@@ -19,9 +19,15 @@ import { describeCondition,
   describeSizing,
   resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { validatePostMortem, type PostMortemView } from "@/domain/post-mortem";
+import {
+  AnnotationSection,
+  type AnnotationRow,
+  type AnnotationTargetOption,
+} from "@/components/AnnotationSection";
 import { currentIdentity } from "@/server/identity";
 import { liveEndOfDaySource } from "@/server/market-data/db-store";
 import { replayForwardTest } from "@/server/forward-test/replay";
+import { annotationsForTargets } from "@/server/queries/annotations";
 import {
   latestPostMortemForTest,
   loadForwardTestForUser,
@@ -83,7 +89,8 @@ export default async function ForwardTestConsolePage({
   const rules = resolveDefinition(definition);
   const costModel = test.costModel as CostModel;
 
-  const recorded = (await tradesForForwardTest(test.id)).map(
+  const rawTrades = await tradesForForwardTest(test.id);
+  const recorded = rawTrades.map(
     (t): LedgerRow => ({
       symbol: t.symbol,
       qty: t.qty,
@@ -92,6 +99,28 @@ export default async function ForwardTestConsolePage({
       netPnlPaise: t.netPnlPaise,
     }),
   );
+
+  // W17. A note may attach to the test or to any recorded trade; the reasons
+  // recorded here at the time are what W21 will attribute against.
+  const noteTargets: AnnotationTargetOption[] = [
+    { label: "This test", targetType: "FORWARD_TEST", targetId: test.id },
+    ...rawTrades.map((t) => ({
+      label: `Trade · ${t.symbol} · ${isoDate(t.entryAt)}`,
+      targetType: "PAPER_TRADE" as const,
+      targetId: t.id,
+    })),
+  ];
+  const labelByTarget = new Map(noteTargets.map((t) => [t.targetId, t.label]));
+  const noteRows: AnnotationRow[] = (
+    await annotationsForTargets(user.id, noteTargets.map((t) => t.targetId))
+  ).map((a) => ({
+    id: a.id,
+    targetLabel: labelByTarget.get(a.targetId) ?? "This test",
+    structuredReason: a.structuredReason,
+    noteText: a.noteText,
+    supersedesId: a.supersedesId,
+    createdAt: a.createdAt.toISOString(),
+  }));
   const ledger = summariseLedger(recorded);
 
   const isLive = test.status === "RUNNING" || test.status === "DRAFT";
@@ -162,6 +191,8 @@ export default async function ForwardTestConsolePage({
             counting {ledger.unpriced === 1 ? "it" : "them"} as zero. Please report this.
           </p>
         )}
+
+        <AnnotationSection targets={noteTargets} rows={noteRows} />
 
         {isLive && (
           <section className="mt-8 rounded-[8px] border border-line p-4">

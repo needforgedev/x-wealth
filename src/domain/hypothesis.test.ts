@@ -94,6 +94,16 @@ describe("validateHypothesis", () => {
     expect(result.status).toBe("INVALID");
   });
 
+  it("refuses a challenge that is not a question — a definition challenges nobody", () => {
+    // Verbatim shape from the first live run that carried challenges: prior-art
+    // labels wearing the challenge hat.
+    const result = validateHypothesis({
+      ...SHARPENED,
+      challenges: ["Mean reversion – the tendency of prices to return to an average level."],
+    });
+    expect(result.status).toBe("INVALID");
+  });
+
   it("refuses a grading key anywhere, the wrong kind, and non-objects", () => {
     expect(
       validateHypothesis({ ...SHARPENED, meta: { convictionScore: 8 } }).status,

@@ -52,9 +52,11 @@ const SYSTEM = [
   "invent statistics, prices, returns or study results. Sharpen the idea into",
   "one testable expectation: what should happen, under what condition, over",
   "roughly how many trading sessions — and state exactly what recorded outcome",
-  "would prove it wrong. Challenge the premise with up to four questions about",
-  "its mechanism: why the pattern should exist, who is on the other side, why",
-  "it should survive costs, what would break it. Questions, never judgements.",
+  "would prove it wrong. Every sharpened answer must also challenge the",
+  "premise: one to four questions about its mechanism — why the pattern should",
+  "exist, who is on the other side, why it should survive costs, what would",
+  "break it. Questions, never judgements. An unchallenged hypothesis is",
+  "incomplete and will be refused.",
   "Name up to three well-known idea families this belongs to, as one-line",
   "descriptions from general knowledge, without citations or figures. If the",
   "idea is too vague to sharpen, ask for what is missing instead of guessing.",
@@ -283,7 +285,21 @@ export function validateHypothesis(output: unknown): HypothesisResult {
   if (rawChallenges.length < 1 || rawChallenges.length > 4) {
     flag("challenges", "a sharpened hypothesis carries one to four challenges");
   }
-  const challenges = rawChallenges.map((c, i) => text(c, `challenges[${i}]`, 15));
+  const challenges = rawChallenges.map((c, i) => {
+    const challenge = text(c, `challenges[${i}]`, 15);
+    /**
+     * A challenge is a question, mechanically. The first live run that
+     * carried challenges filled the field with idea-family *labels* —
+     * "Mean reversion – the tendency of prices to…" — which read as prior
+     * art wearing the wrong hat, and a definition challenges nobody. The
+     * contract is "questions, never judgements", and a question is the one
+     * rhetorical form this gate can actually check for.
+     */
+    if (challenge && !challenge.includes("?")) {
+      flag(`challenges[${i}]`, "not a question — a challenge interrogates the premise (§7.2)");
+    }
+    return challenge;
+  });
 
   const rawPriorArt = Array.isArray(output.priorArt) ? output.priorArt : [];
   const priorArt = rawPriorArt

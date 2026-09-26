@@ -125,6 +125,10 @@ try {
     // most worth removing, so a role that could soften one could soften that.
     ["UPDATE adversarial_reports findings", `update adversarial_reports set findings = '[]'::jsonb`],
     ["DELETE adversarial_reports", `delete from adversarial_reports`],
+    // W17. A reason recorded at the time is what W21 attributes against, and a
+    // role that could reword one afterwards could make every gap look chosen.
+    ["UPDATE annotations", `update annotations set note_text = 'always believed it'`],
+    ["DELETE annotations", `delete from annotations`],
   ];
 
   class Rollback extends Error {}
@@ -159,6 +163,8 @@ try {
                                         findings, severity_ranking, attacks_run, attacks_skipped)
           values ('${F}', '${F}', 'adversarial-1', 1, '[]'::jsonb, '[]'::jsonb,
                   '["SAMPLE_SIZE"]'::jsonb, '[]'::jsonb);
+        insert into annotations(id, user_id, target_type, target_id, structured_reason, note_text)
+          values ('${F}', '${F}', 'FORWARD_TEST', '${F}', 'NOTE', 'service-role check');
       `);
 
       await tx.unsafe("set local role service_role");

@@ -4,6 +4,11 @@ import { notFound, redirect } from "next/navigation";
 
 import { AppBar } from "@/components/AppBar";
 import { AppShell } from "@/components/AppShell";
+import {
+  AnnotationSection,
+  type AnnotationRow,
+  type AnnotationTargetOption,
+} from "@/components/AnnotationSection";
 import { db } from "@/db";
 import { strategies, strategyVersions } from "@/db/schema";
 import { hasAcknowledgedRisk, nextPath } from "@/domain/onboarding";
@@ -12,6 +17,7 @@ import { describeCondition,
   resolveDefinition, type StrategyDefinition } from "@/domain/strategy";
 import { loadCatalogue } from "@/server/market-data/catalogue";
 import { listRunsForStrategy } from "@/server/queries/backtest";
+import { annotationsForTargets } from "@/server/queries/annotations";
 import { listForwardTestsForStrategy } from "@/server/queries/forward-test";
 import { currentIdentity } from "@/server/identity";
 import { ReviseForm } from "./ReviseForm";
@@ -69,6 +75,25 @@ export default async function StrategyPage({ params }: PageProps<"/strategies/[i
     if (existing) existing.push(entry);
     else testsByVersion.set(entry.versionNo, [entry]);
   }
+
+  // W17. Notes attach to versions here — "authored after reading test X's
+  // post-mortem" is lineage worth recording where the lineage lives.
+  const noteTargets: AnnotationTargetOption[] = versions.map((v) => ({
+    label: `v${v.versionNo} · ${v.createdAt.toISOString().slice(0, 10)}`,
+    targetType: "STRATEGY_VERSION" as const,
+    targetId: v.id,
+  }));
+  const labelByTarget = new Map(noteTargets.map((t) => [t.targetId, t.label]));
+  const noteRows: AnnotationRow[] = (
+    await annotationsForTargets(user.id, noteTargets.map((t) => t.targetId))
+  ).map((a) => ({
+    id: a.id,
+    targetLabel: labelByTarget.get(a.targetId) ?? "",
+    structuredReason: a.structuredReason,
+    noteText: a.noteText,
+    supersedesId: a.supersedesId,
+    createdAt: a.createdAt.toISOString(),
+  }));
 
   return (
     <AppShell>
@@ -195,6 +220,8 @@ export default async function StrategyPage({ params }: PageProps<"/strategies/[i
             />
           </div>
         )}
+
+        <AnnotationSection targets={noteTargets} rows={noteRows} />
 
         <p className="mt-8 rounded-[6px] bg-surface-alt p-4 text-[13px] text-muted">
           A backtest is a statement about data that was already known when the rules were written. A

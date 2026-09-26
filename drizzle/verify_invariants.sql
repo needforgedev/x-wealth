@@ -275,6 +275,36 @@ SELECT pg_temp.must_allow('a rerun under a new suite version',
   $$insert into adversarial_reports(backtest_run_id,suite_version,seed,findings,severity_ranking,attacks_run,attacks_skipped)
     values ('b0000000-0000-0000-0000-0000000000ff','adversarial-2',20260828,'[]'::jsonb,'[]'::jsonb,'["SAMPLE_SIZE"]'::jsonb,'[]'::jsonb)$$);
 
+\echo '--- annotations: why never rewrites what (7.5, 8.8) ---'
+-- W17. A note records a reason at the time; editing appends a replacement
+-- naming what it supersedes, and nothing is ever rewritten. The chain stays
+-- linear (one successor per note) and inside its own record.
+INSERT INTO annotations(id, user_id, target_type, target_id, structured_reason, note_text) VALUES
+  ('a1000000-0000-0000-0000-0000000000ff', 'a0000000-0000-0000-0000-0000000000ff',
+   'FORWARD_TEST', 'f0000000-0000-0000-0000-0000000000ff', 'NOTE', 'watching the first window');
+
+SELECT pg_temp.must_reject('rewrite a recorded note',
+  $$update annotations set note_text='always believed it' where id='a1000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('re-reason a recorded note',
+  $$update annotations set structured_reason='SKIP_NEWS_EVENT' where id='a1000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('DELETE a note',
+  $$delete from annotations where id='a1000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('a bare "other" with no words',
+  $$insert into annotations(user_id,target_type,target_id,structured_reason,note_text)
+    values ('a0000000-0000-0000-0000-0000000000ff','FORWARD_TEST','f0000000-0000-0000-0000-0000000000ff','SKIP_OTHER','  ')$$);
+SELECT pg_temp.must_reject('a note about a row that does not exist',
+  $$insert into annotations(user_id,target_type,target_id,structured_reason,note_text)
+    values ('a0000000-0000-0000-0000-0000000000ff','PAPER_TRADE','99999999-0000-0000-0000-0000000000ff','NOTE','about nothing')$$);
+SELECT pg_temp.must_reject('a replacement about a different record',
+  $$insert into annotations(user_id,target_type,target_id,structured_reason,note_text,supersedes_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','STRATEGY_VERSION','c0000000-0000-0000-0000-0000000000ff','NOTE','moved my note', 'a1000000-0000-0000-0000-0000000000ff')$$);
+SELECT pg_temp.must_allow('supersede a note with a revision, same record',
+  $$insert into annotations(id,user_id,target_type,target_id,structured_reason,note_text,supersedes_id)
+    values ('a2000000-0000-0000-0000-0000000000ff','a0000000-0000-0000-0000-0000000000ff','FORWARD_TEST','f0000000-0000-0000-0000-0000000000ff','NOTE','watching, and adding nothing mid-window', 'a1000000-0000-0000-0000-0000000000ff')$$);
+SELECT pg_temp.must_reject('a second successor for the same note',
+  $$insert into annotations(user_id,target_type,target_id,structured_reason,note_text,supersedes_id)
+    values ('a0000000-0000-0000-0000-0000000000ff','FORWARD_TEST','f0000000-0000-0000-0000-0000000000ff','NOTE','the kinder rewrite', 'a1000000-0000-0000-0000-0000000000ff')$$);
+
 \echo '--- soft-delete guard (5.1) ---'
 SELECT pg_temp.must_allow('assert_no_soft_delete_columns() on a clean schema',
   $$select assert_no_soft_delete_columns()$$);
