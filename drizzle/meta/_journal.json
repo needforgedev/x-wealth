@@ -127,6 +127,13 @@
       "when": 1788156927745,
       "tag": "0017_annotations",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788243327745,
+      "tag": "0018_market_events",
+      "breakpoints": true
     }
   ]
 }

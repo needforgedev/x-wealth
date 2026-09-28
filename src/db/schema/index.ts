@@ -37,6 +37,7 @@ export * from "./testing";
 export * from "./ai";
 export * from "./adversarial";
 export * from "./annotations";
+export * from "./events";
 export * from "./portfolio";
 export * from "./market-data";
 export * from "./audit";

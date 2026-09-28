@@ -1,3 +1,4 @@
+import { MARKET_EVENT_TYPES, type MarketEventType } from "./events";
 import { warmUpBars } from "./indicators";
 import { isSymbol } from "./symbol";
 
@@ -124,6 +125,37 @@ export type StrategyDefinitionV2 = {
   maxConcurrentPositions: number;
   maxExposurePercent: number;
   initialCapitalPaise: number;
+  /**
+   * §7.4's event primitives, all optional. **The key itself is optional**
+   * because six stored versions predate it — an absent key resolves to null
+   * (no event rules), and the `0012` completeness CHECK is unaffected since
+   * it names required keys and never forbids extras.
+   */
+  eventRules?: EventRules | null;
+};
+
+/** A window of sessions before events of the given types. */
+export type EventWindow = {
+  /** In *sessions*, not calendar days — a Friday is one session before a Monday. */
+  daysBefore: number;
+  types: MarketEventType[];
+};
+
+/**
+ * The four §7.4 primitives, each independently optional. Data, never code,
+ * like everything else in a definition — the sensitivity sweep can perturb
+ * `daysBefore` and the CHECKs can see the fields, which is what makes them
+ * rules rather than annotations.
+ */
+export type EventRules = {
+  /** `skip_entries_within(days, type)` — no new entries inside the window. */
+  skipEntriesWithin: EventWindow | null;
+  /** `flatten_positions_before(type)` — flat by the close before the event. */
+  flattenBefore: { types: MarketEventType[] } | null;
+  /** `no_new_positions_on(EXPIRY_DAY)` — computed from the calendar, not a row. */
+  noNewPositionsOnExpiryDay: boolean;
+  /** `size_multiplier_during(window, multiplier)` — scaled entries inside it. */
+  sizeMultiplierDuring: (EventWindow & { multiplier: number }) | null;
 };
 
 export type StrategyDefinition = StrategyDefinitionV1 | StrategyDefinitionV2;
@@ -140,6 +172,10 @@ export const LIMITS = {
   maxExposurePercent: { min: 1, max: 100 },
   minAvgTurnoverPaise: { min: 0, max: 1_000_000_000_000 },
   initialCapitalPaise: { min: 100_000, max: 100_000_000_000 }, // ₹1,000 – ₹100 crore
+  /** Sessions, not days. Ten is half a trading month — beyond that the rule is the strategy. */
+  eventDaysBefore: { min: 0, max: 10 },
+  /** ≤ 1 only: scaling *down* into an event window. Scaling up is a different product. */
+  eventSizeMultiplier: { min: 0.1, max: 1 },
 } as const;
 
 /**
@@ -163,6 +199,7 @@ export type ResolvedDefinition = {
   maxExposurePercent: number;
   minAvgTurnoverPaise: number | null;
   initialCapitalPaise: number;
+  eventRules: EventRules | null;
 };
 
 export function resolveDefinition(definition: StrategyDefinition): ResolvedDefinition {
@@ -180,6 +217,8 @@ export function resolveDefinition(definition: StrategyDefinition): ResolvedDefin
       maxExposurePercent: definition.maxExposurePercent,
       minAvgTurnoverPaise: definition.universe.minAvgTurnoverPaise,
       initialCapitalPaise: definition.initialCapitalPaise,
+      // Absent on rows saved before W16 existed; absent means none.
+      eventRules: definition.eventRules ?? null,
     };
   }
 
@@ -202,6 +241,7 @@ export function resolveDefinition(definition: StrategyDefinition): ResolvedDefin
     maxExposurePercent: 100,
     minAvgTurnoverPaise: null,
     initialCapitalPaise: definition.initialCapitalPaise,
+    eventRules: null,
   };
 }
 
@@ -499,7 +539,63 @@ export function validateStrategyDefinition(
     issues.push({ field: "initialCapitalPaise", message: "Capital must be a whole number of paise." });
   }
 
+  if (definition.version === 2 && definition.eventRules != null) {
+    checkEventRules(definition.eventRules, issues);
+  }
+
   return issues;
+}
+
+function checkEventTypes(types: unknown, field: string, issues: ValidationIssue[]): void {
+  if (!Array.isArray(types) || types.length === 0) {
+    issues.push({ field, message: "Name at least one event type." });
+    return;
+  }
+  for (const t of types) {
+    if (!MARKET_EVENT_TYPES.includes(t as MarketEventType)) {
+      issues.push({ field, message: `Unknown event type "${String(t)}".` });
+    }
+  }
+}
+
+function checkEventWindow(daysBefore: unknown, field: string, issues: ValidationIssue[]): void {
+  const bounds = LIMITS.eventDaysBefore;
+  if (
+    typeof daysBefore !== "number" ||
+    !Number.isInteger(daysBefore) ||
+    daysBefore < bounds.min ||
+    daysBefore > bounds.max
+  ) {
+    issues.push({
+      field,
+      message: `The window is whole sessions, ${bounds.min} to ${bounds.max}.`,
+    });
+  }
+}
+
+function checkEventRules(rules: EventRules, issues: ValidationIssue[]): void {
+  if (rules.skipEntriesWithin != null) {
+    checkEventWindow(rules.skipEntriesWithin.daysBefore, "eventRules.skipEntriesWithin", issues);
+    checkEventTypes(rules.skipEntriesWithin.types, "eventRules.skipEntriesWithin", issues);
+  }
+  if (rules.flattenBefore != null) {
+    checkEventTypes(rules.flattenBefore.types, "eventRules.flattenBefore", issues);
+  }
+  if (typeof rules.noNewPositionsOnExpiryDay !== "boolean") {
+    issues.push({ field: "eventRules.noNewPositionsOnExpiryDay", message: "Yes or no." });
+  }
+  if (rules.sizeMultiplierDuring != null) {
+    const m = rules.sizeMultiplierDuring.multiplier;
+    const bounds = LIMITS.eventSizeMultiplier;
+    checkEventWindow(rules.sizeMultiplierDuring.daysBefore, "eventRules.sizeMultiplierDuring", issues);
+    checkEventTypes(rules.sizeMultiplierDuring.types, "eventRules.sizeMultiplierDuring", issues);
+    if (typeof m !== "number" || !Number.isFinite(m) || m < bounds.min || m > bounds.max) {
+      issues.push({
+        field: "eventRules.sizeMultiplierDuring",
+        message: `The multiplier scales entries down: ${bounds.min} to ${bounds.max}.`,
+      });
+    }
+  }
 }
 
 export function isEvaluatable(
@@ -583,6 +679,41 @@ export function describeSizing(sizing: Sizing): string {
     : `${sizing.percent}% of cash on hand per position`;
 }
 
+const EVENT_TYPE_LABELS: Record<MarketEventType, string> = {
+  EARNINGS: "earnings",
+  EX_DIVIDEND: "ex-dividend",
+  SPLIT: "split",
+  BONUS: "bonus",
+  RBI_POLICY: "RBI policy",
+  BUDGET: "Budget",
+  CPI_IIP: "CPI/IIP",
+};
+
+const listEventTypes = (types: readonly MarketEventType[]) =>
+  types.map((t) => EVENT_TYPE_LABELS[t]).join(", ");
+
+/** The same words on every screen — frozen parameters, review, diff. */
+export function describeEventRules(rules: EventRules | null | undefined): string {
+  if (!rules) return "None";
+  const parts: string[] = [];
+  if (rules.skipEntriesWithin) {
+    parts.push(
+      `no entries within ${rules.skipEntriesWithin.daysBefore} sessions of ${listEventTypes(rules.skipEntriesWithin.types)}`,
+    );
+  }
+  if (rules.flattenBefore) {
+    parts.push(`flat before ${listEventTypes(rules.flattenBefore.types)}`);
+  }
+  if (rules.noNewPositionsOnExpiryDay) parts.push("no new positions on expiry day");
+  if (rules.sizeMultiplierDuring) {
+    parts.push(
+      `entries scaled to ${Math.round(rules.sizeMultiplierDuring.multiplier * 100)}% within ` +
+        `${rules.sizeMultiplierDuring.daysBefore} sessions of ${listEventTypes(rules.sizeMultiplierDuring.types)}`,
+    );
+  }
+  return parts.length > 0 ? parts.join("; ") : "None";
+}
+
 /** A stable fingerprint, so "did anything actually change?" is answerable. */
 export function definitionFingerprint(definition: StrategyDefinition): string {
   const r = resolveDefinition(definition);
@@ -599,6 +730,8 @@ export function definitionFingerprint(definition: StrategyDefinition): string {
     r.maxExposurePercent,
     r.minAvgTurnoverPaise,
     r.initialCapitalPaise,
+    // A revision that only adds an event rule is still a revision.
+    r.eventRules,
   ]);
 }
 

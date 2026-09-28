@@ -481,6 +481,7 @@ const EXIT_LABELS: Record<ExecutedTrade["exitReason"], string> = {
   SIGNAL: "Exit rule",
   STOP_LOSS: "Stop-loss",
   TARGET: "Target",
+  EVENT_FLATTEN: "Flattened before event",
   END_OF_PERIOD: "Period ended",
 };
 

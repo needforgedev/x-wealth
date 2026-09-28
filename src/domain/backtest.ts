@@ -1,8 +1,15 @@
 import { signalsFor, type SignalSeries } from "./backtest-signals";
 import type { CostModel, CostsBreakdown } from "./costs";
+import {
+  entryBarredByEvents,
+  isExpiryDay,
+  mustFlattenBeforeEvents,
+  sizeMultiplierForSession,
+  type MarketEvent,
+} from "./events";
 import { positionValue, type PriceTicks } from "./money";
 import type { Bar } from "./market-data";
-import type { IsoDate } from "./session";
+import { NSE_CALENDAR, type IsoDate, type TradingCalendar } from "./session";
 import {
   advanceSession,
   FILL_MODEL,
@@ -218,6 +225,17 @@ export type BacktestInput = {
    * than quietly running the wrong one.
    */
   fillModel?: FillModel;
+
+  /**
+   * Dated facts for the definition's event rules (§7.4). Only read when the
+   * definition declares rules; an empty list with rules declared means the
+   * gates simply never fire, which is a fact about the data, not an error.
+   * Each event's own `knownOn`/`recordedOn` decide when it becomes visible —
+   * the caller supplies everything and the engine filters per session.
+   */
+  events?: readonly MarketEvent[];
+  /** Session arithmetic for windows and expiry days. NSE by default. */
+  calendar?: TradingCalendar;
 };
 
 type SymbolState = {
@@ -244,6 +262,8 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
   const warmUp = requiredWarmUpBars(input.definition);
 
   const symbols = [...definition.instruments].sort();
+  const events = input.events ?? [];
+  const calendar = input.calendar ?? NSE_CALENDAR;
   if (symbols.length === 0) throw new BacktestError("the definition names no instruments");
 
   const states = new Map<string, SymbolState>();
@@ -322,18 +342,68 @@ export function runBacktest(input: BacktestInput): BacktestOutcome {
       if (i === undefined) continue; // this instrument did not trade today
       const bar = state.bars[i];
 
+      /**
+       * §7.4 gates, decided here so `session-step` never sees an event. The
+       * entry mask suppresses the *decision* — a signal inside a declared
+       * window is a signal the rules say not to take, so no order rests for
+       * the next open. Each helper filters events by what this session could
+       * know (`knownOn`, and `recordedOn` on the forward path), which is what
+       * keeps replays stable and backtests honest at the same time.
+       */
+      let entryBarred = false;
+      let forceEventFlatten = false;
+      let sizeMultiplier = 1;
+      const rules = definition.eventRules;
+      if (rules) {
+        if (rules.skipEntriesWithin) {
+          entryBarred = entryBarredByEvents({
+            session: date,
+            symbol,
+            daysBefore: rules.skipEntriesWithin.daysBefore,
+            types: rules.skipEntriesWithin.types,
+            events,
+            calendar,
+          });
+        }
+        if (!entryBarred && rules.noNewPositionsOnExpiryDay) {
+          entryBarred = isExpiryDay(date, calendar);
+        }
+        if (rules.flattenBefore) {
+          forceEventFlatten = mustFlattenBeforeEvents({
+            session: date,
+            symbol,
+            types: rules.flattenBefore.types,
+            events,
+            calendar,
+          });
+        }
+        if (rules.sizeMultiplierDuring) {
+          sizeMultiplier = sizeMultiplierForSession({
+            session: date,
+            symbol,
+            daysBefore: rules.sizeMultiplierDuring.daysBefore,
+            multiplier: rules.sizeMultiplierDuring.multiplier,
+            types: rules.sizeMultiplierDuring.types,
+            events,
+            calendar,
+          });
+        }
+      }
+
       const step = advanceSession({
         bar,
         position: state.position,
         pending: state.pending,
         cashPaise: cash,
-        entrySignal: state.signals.entry[i],
+        entrySignal: entryBarred ? false : state.signals.entry[i],
         exitSignal: state.signals.exit[i],
         definition,
         costModel,
         lotSize: state.lotSize,
         isFinalSession: isFinalDate,
         fillModel: input.fillModel ?? FILL_MODEL,
+        forceEventFlatten,
+        sizeMultiplier,
       });
 
       if (step.closed) {

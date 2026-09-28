@@ -292,7 +292,7 @@ describe("revising an existing version", () => {
   it("sees every component a revision could touch", () => {
     // A field the diff cannot express is a field a revision could change
     // silently, so the two lists must stay the same length.
-    expect(definitionRows(before)).toHaveLength(11);
+    expect(definitionRows(before)).toHaveLength(12);
     const everything = after({
       instruments: ["NSE:TCS"], minAvgTurnoverPaise: null, stopLossPercent: 7,
       targetPercent: null, riskPercent: 2, maxConcurrentPositions: 3,
@@ -300,8 +300,31 @@ describe("revising an existing version", () => {
       entry: { left: { kind: "SMA", period: 20 }, comparator: "CROSSES_ABOVE", right: { kind: "SMA", period: 50 } },
       exit: { left: { kind: "SMA", period: 20 }, comparator: "CROSSES_BELOW", right: { kind: "SMA", period: 50 } },
     });
-    // Timeframe is the one component with a single legal value today.
+    // Timeframe is the one with a single legal value; event rules the compiler
+    // does not emit yet (see the dedicated test below). The other ten move.
     expect(diffDefinitions(before, everything)).toHaveLength(10);
+  });
+
+  /**
+   * Event rules participate in the diff even though the compiler cannot emit
+   * them yet (W16 wired them into the definition and the engine; teaching the
+   * model to author them is the remaining half). Built directly, because
+   * `after()` routes through the compiler. When a revision adds or drops an
+   * event rule by any future path, the user sees a row for it.
+   */
+  it("diffs the event-rules row", () => {
+    const withRule = {
+      ...before,
+      eventRules: {
+        skipEntriesWithin: { daysBefore: 3, types: ["EARNINGS" as const] },
+        flattenBefore: null,
+        noNewPositionsOnExpiryDay: false,
+        sizeMultiplierDuring: null,
+      },
+    };
+    const changes = diffDefinitions(before, withRule);
+    expect(changes.map((c) => c.field)).toEqual(["Event rules"]);
+    expect(changes[0].to).toContain("no entries within 3 sessions of earnings");
   });
 
   it("shows the model the current rules, and tells it to change only what was asked", () => {

@@ -43,6 +43,7 @@ import {
   type StrategyDefinitionV2,
   type ValidationIssue,
   describeCondition,
+  describeEventRules,
   describeSizing,
   validateStrategyDefinition,
 } from "./strategy";
@@ -594,6 +595,10 @@ export function definitionRows(d: StrategyDefinitionV2): Array<[string, string]>
     ["Max positions", String(d.maxConcurrentPositions)],
     ["Max exposure", `${d.maxExposurePercent}%`],
     ["Capital", rupees(d.initialCapitalPaise)],
+    // A revision that silently added or dropped an event rule would change what
+    // the strategy does with no diff row to show it — the exact failure this
+    // list exists to prevent (W4-12). See `diffDefinitions`.
+    ["Event rules", describeEventRules(d.eventRules)],
   ];
 }
 

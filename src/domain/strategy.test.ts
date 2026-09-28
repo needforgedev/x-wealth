@@ -139,6 +139,66 @@ describe("numeric bounds", () => {
   });
 });
 
+describe("event rules (§7.4)", () => {
+  const noRules = {
+    skipEntriesWithin: null,
+    flattenBefore: null,
+    noNewPositionsOnExpiryDay: false,
+    sizeMultiplierDuring: null,
+  };
+
+  it("a strategy with no event rules is valid, and so is one with a good rule", () => {
+    expect(validateStrategyDefinition(valid())).toEqual([]);
+    expect(
+      validateStrategyDefinition(
+        valid({ eventRules: { ...noRules, skipEntriesWithin: { daysBefore: 3, types: ["EARNINGS"] } } }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects an unknown event type", () => {
+    expect(
+      fields(valid({ eventRules: { ...noRules, flattenBefore: { types: ["MERGER" as never] } } })),
+    ).toContain("eventRules.flattenBefore");
+  });
+
+  it("rejects a window outside 0–10 sessions", () => {
+    for (const daysBefore of [-1, 11, 2.5]) {
+      expect(
+        fields(valid({ eventRules: { ...noRules, skipEntriesWithin: { daysBefore, types: ["EARNINGS"] } } })),
+      ).toContain("eventRules.skipEntriesWithin");
+    }
+  });
+
+  it("rejects an empty type list — a rule about nothing", () => {
+    expect(
+      fields(valid({ eventRules: { ...noRules, flattenBefore: { types: [] } } })),
+    ).toContain("eventRules.flattenBefore");
+  });
+
+  it("rejects a size multiplier that scales up rather than down", () => {
+    expect(
+      fields(
+        valid({
+          eventRules: {
+            ...noRules,
+            sizeMultiplierDuring: { daysBefore: 2, types: ["EARNINGS"], multiplier: 1.5 },
+          },
+        }),
+      ),
+    ).toContain("eventRules.sizeMultiplierDuring");
+  });
+
+  it("counts adding an event rule as a difference between versions", () => {
+    expect(
+      definitionsDiffer(
+        valid(),
+        valid({ eventRules: { ...noRules, noNewPositionsOnExpiryDay: true } }),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("describeCondition", () => {
   it("reads as a sentence for a reviewer", () => {
     expect(describeCondition(valid().entry)).toBe("SMA(20) crosses above SMA(50)");

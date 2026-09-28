@@ -305,6 +305,35 @@ SELECT pg_temp.must_reject('a second successor for the same note',
   $$insert into annotations(user_id,target_type,target_id,structured_reason,note_text,supersedes_id)
     values ('a0000000-0000-0000-0000-0000000000ff','FORWARD_TEST','f0000000-0000-0000-0000-0000000000ff','NOTE','the kinder rewrite', 'a1000000-0000-0000-0000-0000000000ff')$$);
 
+\echo '--- market_events: dated facts, honestly dated (7.4) ---'
+-- W16. A revised date is a new row; known_on never trails the event; scope
+-- matches type. The lookahead guard is only as strong as these rejections.
+INSERT INTO market_events(id, event_type, symbol, event_date, known_on, confirmed, source) VALUES
+  ('e1000000-0000-0000-0000-0000000000ff', 'EX_DIVIDEND', 'NSE:TCS',
+   '2026-10-15', '2026-09-20', true, 'verify fixture');
+
+SELECT pg_temp.must_reject('move a recorded event date',
+  $$update market_events set event_date='2026-10-16' where id='e1000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('quietly confirm a recorded event',
+  $$update market_events set confirmed=true where id='e1000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('DELETE an event',
+  $$delete from market_events where id='e1000000-0000-0000-0000-0000000000ff'$$);
+SELECT pg_temp.must_reject('a company event with no company',
+  $$insert into market_events(event_type,symbol,event_date,known_on,confirmed,source)
+    values ('EARNINGS',null,'2026-10-20','2026-10-01',true,'verify')$$);
+SELECT pg_temp.must_reject('a market-wide event filtered to one symbol',
+  $$insert into market_events(event_type,symbol,event_date,known_on,confirmed,source)
+    values ('BUDGET','NSE:TCS','2027-02-01','2026-12-01',true,'verify')$$);
+SELECT pg_temp.must_reject('a date that became known after it happened',
+  $$insert into market_events(event_type,symbol,event_date,known_on,confirmed,source)
+    values ('EARNINGS','NSE:TCS','2026-10-20','2026-10-21',true,'verify')$$);
+SELECT pg_temp.must_reject('an event from nowhere',
+  $$insert into market_events(event_type,symbol,event_date,known_on,confirmed,source)
+    values ('RBI_POLICY',null,'2026-12-04','2026-10-01',true,'   ')$$);
+SELECT pg_temp.must_allow('a revised date as a new row, the old one untouched',
+  $$insert into market_events(event_type,symbol,event_date,known_on,confirmed,source)
+    values ('EX_DIVIDEND','NSE:TCS','2026-10-17','2026-09-25',true,'verify fixture')$$);
+
 \echo '--- soft-delete guard (5.1) ---'
 SELECT pg_temp.must_allow('assert_no_soft_delete_columns() on a clean schema',
   $$select assert_no_soft_delete_columns()$$);

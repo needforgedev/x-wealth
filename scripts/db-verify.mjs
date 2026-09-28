@@ -129,6 +129,10 @@ try {
     // role that could reword one afterwards could make every gap look chosen.
     ["UPDATE annotations", `update annotations set note_text = 'always believed it'`],
     ["DELETE annotations", `delete from annotations`],
+    // W16. An event row is a backtest input; a role that could move a date
+    // could hand every historical run a quietly different world.
+    ["UPDATE market_events", `update market_events set event_date = '2030-01-01'`],
+    ["DELETE market_events", `delete from market_events`],
   ];
 
   class Rollback extends Error {}
@@ -165,6 +169,8 @@ try {
                   '["SAMPLE_SIZE"]'::jsonb, '[]'::jsonb);
         insert into annotations(id, user_id, target_type, target_id, structured_reason, note_text)
           values ('${F}', '${F}', 'FORWARD_TEST', '${F}', 'NOTE', 'service-role check');
+        insert into market_events(id, event_type, symbol, event_date, known_on, confirmed, source)
+          values ('${F}', 'EX_DIVIDEND', 'NSE:TCS', '2030-06-01', '2030-05-01', true, 'service-role check');
       `);
 
       await tx.unsafe("set local role service_role");

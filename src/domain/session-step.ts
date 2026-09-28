@@ -82,7 +82,7 @@ export type PositionState = {
 /** Decided at one session's close, acted on at the next session's open. */
 export type PendingOrder = "ENTER" | "EXIT" | null;
 
-export type ExitReason = "SIGNAL" | "STOP_LOSS" | "TARGET" | "END_OF_PERIOD";
+export type ExitReason = "SIGNAL" | "STOP_LOSS" | "TARGET" | "EVENT_FLATTEN" | "END_OF_PERIOD";
 
 /**
  * How a session that reached both levels was resolved.
@@ -129,6 +129,16 @@ export type SessionInput = {
    * current constant.
    */
   fillModel?: FillModel;
+
+  /**
+   * §7.4 event gating, decided by the engine loop — this module never sees an
+   * event, only the session-level consequences. `forceEventFlatten` closes an
+   * open position at this session's close (the last session before the
+   * event); `sizeMultiplier` scales the entry notional inside a declared
+   * window. Both default to inert.
+   */
+  forceEventFlatten?: boolean;
+  sizeMultiplier?: number;
 };
 
 export type OpenedPosition = {
@@ -203,14 +213,21 @@ export function advanceSession(input: SessionInput): SessionOutcome {
 
   // --- act on what was decided at the previous close ------------------------
   if (position) {
-    const settlement = closeIfDue(position, bar, input.pending, costModel, isFinalSession);
+    const settlement = closeIfDue(
+      position,
+      bar,
+      input.pending,
+      costModel,
+      isFinalSession,
+      input.forceEventFlatten === true,
+    );
     if (settlement) {
       closed = settlement;
       cashPaise += settlement.proceedsPaise;
       position = null;
     }
   } else if (input.pending === "ENTER" && !isFinalSession) {
-    const entry = openAt(bar, definition, costModel, cashPaise, input.lotSize);
+    const entry = openAt(bar, definition, costModel, cashPaise, input.lotSize, input.sizeMultiplier ?? 1);
     if (entry) {
       opened = entry;
       cashPaise -= entry.outlayPaise;
@@ -261,10 +278,14 @@ function openAt(
   model: CostModel,
   cashPaise: number,
   lotSize: number,
+  sizeMultiplier: number,
 ): OpenedPosition | null {
   const price = bar.open;
 
-  const target = targetNotional(definition, price, cashPaise);
+  // The event multiplier scales the notional, then lots round it down as
+  // always — so the scaling can only ever shrink the position further, never
+  // sneak it back up (§7.4's window is a risk reduction, not a rounding).
+  const target = Math.floor(targetNotional(definition, price, cashPaise) * sizeMultiplier);
   const qty = affordableQty(model, price, target, cashPaise, lotSize);
   if (qty <= 0) return null;
 
@@ -379,6 +400,7 @@ function closeIfDue(
   pending: PendingOrder,
   model: CostModel,
   isFinalSession: boolean,
+  forceEventFlatten: boolean,
 ): ClosedPosition | null {
   if (pending === "EXIT") {
     // All three fill at the same price — the open — so only the recorded reason
@@ -389,6 +411,15 @@ function closeIfDue(
 
   const settled = exitIfLevelHit(position, bar, model, { skipOpenGap: false });
   if (settled) return settled;
+
+  /**
+   * §7.4's flatten rule, ordered after the resting orders on purpose: a stop
+   * hit during the session still fills at the stop, and only a position that
+   * survived to the close is flattened there. This is the same close-at-close
+   * mechanics as the final session, under its own recorded reason — the
+   * exit-reason mix must show the rule's cost, not launder it as signal exits.
+   */
+  if (forceEventFlatten) return settle(position, bar.close, "EVENT_FLATTEN", model);
 
   // Nothing may be left open past the end of the reported window. An unclosed
   // position is an unrealised number, and reporting one as a result would let a

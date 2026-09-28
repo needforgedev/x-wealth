@@ -6,6 +6,7 @@ import {
   type OpenPositionAtEnd,
 } from "./backtest";
 import { accountForTrade, chargesForLeg, type CostModel } from "./costs";
+import type { MarketEvent } from "./events";
 import type { Bar } from "./market-data";
 import type { PriceTicks } from "./money";
 import type { IsoDate, TradingCalendar } from "./session";
@@ -320,6 +321,14 @@ export function evaluateForwardTest(input: {
   params: ForwardTestParams;
   series: Record<string, readonly Bar[]>;
   lotSizes?: Record<string, number>;
+  /**
+   * Event rows for the definition's §7.4 rules, if any. Supplied by the caller
+   * exactly as `series` is, so the replay stays pure and each event's
+   * `recordedOn` keeps a nightly replay stable against a mid-window backfill
+   * (see `MarketEvent.recordedOn`). Empty when the definition declares no
+   * event rules, which is every definition until the compiler can emit them.
+   */
+  events?: readonly MarketEvent[];
 }): ForwardTestProgress {
   const { params } = input;
 
@@ -375,6 +384,7 @@ export function evaluateForwardTest(input: {
     tradeFrom: params.startedOn,
     closeOutOn: finalSessionDate,
     fillModel: params.fillModel,
+    events: input.events,
   });
 
   return {
