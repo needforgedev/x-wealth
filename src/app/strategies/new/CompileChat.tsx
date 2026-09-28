@@ -85,6 +85,9 @@ export function CompileChat({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [phase, setPhase] = useState<Phase>({ name: "IDEA" });
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  // id → question text, accumulated across every QUESTIONS turn, so an answer
+  // given three turns ago still travels with the question it answered.
+  const [questionText, setQuestionText] = useState<Record<string, string>>({});
   const [interactionId, setInteractionId] = useState<string | null>(null);
   const [live, setLive] = useState<boolean | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export function CompileChat({
   const [hypothesis, setHypothesis] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function compile(withAnswers: Array<{ questionId: string; answer: string }>) {
+  async function compile(withAnswers: Array<{ questionId: string; question?: string; answer: string }>) {
     setError(null);
     setPhase({ name: "WORKING" });
 
@@ -123,6 +126,12 @@ export function CompileChat({
         ...t,
         { role: "compiler", text: "I need a few things before I can compile this." },
       ]);
+      // Remember each question's text by id, so answers stay resolvable on the
+      // next stateless call however many turns later they are sent.
+      setQuestionText((prev) => ({
+        ...prev,
+        ...Object.fromEntries(result.questions.map((q) => [q.id, q.question])),
+      }));
       setPhase({ name: "QUESTIONS", questions: result.questions });
       return;
     }
@@ -240,10 +249,17 @@ export function CompileChat({
           <PrimaryButton
             disabled={!answeredAll}
             onClick={() => {
-              const given = Object.entries(answers).map(([questionId, answer]) => ({
-                questionId,
-                answer,
-              }));
+              // Every accumulated answer, each carrying the question text — a
+              // stateless compile call cannot resolve an id it did not generate
+              // this turn, so the text is what lets it treat the answer as
+              // settled instead of re-asking.
+              const given = Object.entries(answers)
+                .filter(([, answer]) => answer.trim() !== "")
+                .map(([questionId, answer]) => ({
+                  questionId,
+                  question: questionText[questionId],
+                  answer: answer.trim(),
+                }));
               setTurns((t) => [
                 ...t,
                 { role: "you", text: given.map((g) => g.answer).join(" · ") },

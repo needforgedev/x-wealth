@@ -41,12 +41,17 @@ export function WorkbenchChat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [phase, setPhase] = useState<Phase>({ name: "IDEA" });
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  // id → question text, accumulated so an answer stays resolvable on the next
+  // stateless call (see the compile chat for the failure this prevents).
+  const [questionText, setQuestionText] = useState<Record<string, string>>({});
   const [interactionId, setInteractionId] = useState<string | null>(null);
   const [live, setLive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  async function sharpen(withAnswers: Array<{ questionId: string; answer: string }>) {
+  async function sharpen(
+    withAnswers: Array<{ questionId: string; question?: string; answer: string }>,
+  ) {
     setError(null);
     setPhase({ name: "WORKING" });
 
@@ -70,6 +75,10 @@ export function WorkbenchChat() {
         ...t,
         { role: "workbench", text: "A few things before this can be made falsifiable." },
       ]);
+      setQuestionText((prev) => ({
+        ...prev,
+        ...Object.fromEntries(view.questions.map((q) => [q.id, q.question])),
+      }));
       setPhase({ name: "QUESTIONS", questions: view.questions });
       return;
     }
@@ -168,10 +177,13 @@ export function WorkbenchChat() {
           <PrimaryButton
             disabled={!answeredAll}
             onClick={() => {
-              const collected = phase.questions.map((q) => ({
-                questionId: q.id,
-                answer: (answers[q.id] ?? "").trim(),
-              }));
+              const collected = Object.entries(answers)
+                .filter(([, answer]) => answer.trim() !== "")
+                .map(([questionId, answer]) => ({
+                  questionId,
+                  question: questionText[questionId],
+                  answer: answer.trim(),
+                }));
               setTurns((t) => [
                 ...t,
                 { role: "you", text: collected.map((a) => a.answer).join(" · ") },

@@ -348,4 +348,19 @@ describe("revising an existing version", () => {
     expect(input.current).toBeUndefined();
     expect(String(input.system)).not.toContain("EXISTING strategy");
   });
+
+  it("sends each answer with its question text, not a bare id", () => {
+    // The loop bug: a stateless call cannot resolve an id it did not generate,
+    // so it re-asks. The question text is what makes the answer stick.
+    const input = buildCompileInput({
+      idea: "on TCS, MA crossover",
+      catalogue: CATALOGUE,
+      defaultCapitalPaise: 10_000_000,
+      answers: [{ questionId: "Q1", question: "Which universe should it trade?", answer: "NSE:TCS" }],
+    });
+    expect(input.answers).toEqual([
+      { question: "Which universe should it trade?", answer: "NSE:TCS" },
+    ]);
+    expect(String(input.system)).toContain("authoritative reply the user already gave");
+  });
 });

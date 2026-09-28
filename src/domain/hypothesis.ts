@@ -69,12 +69,21 @@ const SYSTEM = [
  */
 export function buildHypothesisInput(input: {
   readonly idea: string;
-  readonly answers?: ReadonlyArray<{ readonly questionId: string; readonly answer: string }>;
+  readonly answers?: ReadonlyArray<{
+    readonly questionId: string;
+    readonly question?: string;
+    readonly answer: string;
+  }>;
 }): Record<string, unknown> {
   return {
     system: SYSTEM,
     idea: input.idea,
-    answers: input.answers ?? [],
+    // Question text, not a bare id — a fresh stateless call cannot resolve an
+    // id it did not generate, so it would re-ask what was already answered.
+    answers: (input.answers ?? []).map((a) => ({
+      question: a.question ?? a.questionId,
+      answer: a.answer,
+    })),
   };
 }
 
@@ -281,25 +290,51 @@ export function validateHypothesis(output: unknown): HypothesisResult {
     );
   }
 
-  const rawChallenges = Array.isArray(output.challenges) ? output.challenges : [];
-  if (rawChallenges.length < 1 || rawChallenges.length > 4) {
-    flag("challenges", "a sharpened hypothesis carries one to four challenges");
-  }
-  const challenges = rawChallenges.map((c, i) => {
-    const challenge = text(c, `challenges[${i}]`, 15);
-    /**
-     * A challenge is a question, mechanically. The first live run that
-     * carried challenges filled the field with idea-family *labels* —
-     * "Mean reversion – the tendency of prices to…" — which read as prior
-     * art wearing the wrong hat, and a definition challenges nobody. The
-     * contract is "questions, never judgements", and a question is the one
-     * rhetorical form this gate can actually check for.
-     */
-    if (challenge && !challenge.includes("?")) {
-      flag(`challenges[${i}]`, "not a question — a challenge interrogates the premise (§7.2)");
+  /**
+   * Challenges, pooled from two fields the model treats as one.
+   *
+   * Three live runs on the same idea: the model routed its premise-questions
+   * into `questions` (the NEEDS_INPUT intake field) on a SHARPENED answer, and
+   * left `challenges` empty or filled with declarative idea-family labels.
+   * Two array fields with near-identical meaning are the structured-output
+   * confusion the compiler notes warn about, and fighting it with a stricter
+   * rule just rejects good answers.
+   *
+   * So: pool both fields, keep the entries that are actually questions
+   * (contain "?"), substantive, and free of judgement — and *withhold* the
+   * rest rather than failing the whole answer, exactly as the critique
+   * withholds a finding that carries no figure. Idea-family labels have no
+   * question mark and fall away silently; a graded challenge is still fatal,
+   * because tone is fatal everywhere. The answer fails only when nothing
+   * question-shaped survives at all.
+   */
+  const candidateChallenges: unknown[] = [
+    ...(Array.isArray(output.challenges) ? output.challenges : []),
+    ...(Array.isArray(output.questions)
+      ? output.questions.map((q) => (isRecord(q) ? q.question : q))
+      : []),
+  ];
+  const challenges: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidateChallenges) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (JUDGEMENT.test(trimmed)) {
+      flag("challenges", "judgement vocabulary — challenge the mechanism, never rate the idea (§7.2)");
+      continue;
     }
-    return challenge;
-  });
+    if (trimmed.length < 15 || !trimmed.includes("?")) continue; // thin or a label — withheld
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (challenges.length < 4) challenges.push(trimmed);
+  }
+  if (challenges.length < 1) {
+    flag(
+      "challenges",
+      "a sharpened hypothesis must carry at least one question challenging the premise (§7.2)",
+    );
+  }
 
   const rawPriorArt = Array.isArray(output.priorArt) ? output.priorArt : [];
   const priorArt = rawPriorArt

@@ -56,7 +56,7 @@ export type CompileResponse = {
 
 export async function compileStrategy(input: {
   idea: string;
-  answers?: Array<{ questionId: string; answer: string }>;
+  answers?: Array<{ questionId: string; question?: string; answer: string }>;
   /**
    * The strategy being revised, if any. Its head version is read **from the
    * database by id**, never accepted from the client: a definition sent over

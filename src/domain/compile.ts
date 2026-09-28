@@ -489,7 +489,10 @@ export const COMPILE_SYSTEM_PROMPT = [
   "   determine one, return status NEEDS_INPUT with questions.",
   "2. Ask only for what you genuinely cannot infer. Bundle every question into",
   "   one response, offer concrete options where the choice is closed, and say",
-  "   in `because` why it could not be assumed.",
+  "   in `because` why it could not be assumed. Anything in `answers` is an",
+  "   authoritative reply the user already gave — treat it as settled, never",
+  "   re-ask it, and if the answers now determine all six components return",
+  "   status COMPILED.",
   "3. Never form a view on a security. Do not suggest instruments the user did",
   "   not mention, and do not 'improve' a rule you think is weak. Translate.",
   "4. You have no market data and must not ask for any. You may only use symbols",
@@ -538,7 +541,14 @@ export const REVISE_SYSTEM_PROMPT = [
 export function buildCompileInput(input: {
   readonly idea: string;
   readonly catalogue: readonly InstrumentChoice[];
-  readonly answers?: ReadonlyArray<{ questionId: string; answer: string }>;
+  /**
+   * Prior answers, each carrying the **question text** — not just an opaque id.
+   * Every compile call is a fresh, stateless model call: it invents new
+   * question ids each turn and cannot match last turn's `"Q1"` to anything, so
+   * an answer keyed only by id reads as answering a question it never asked and
+   * it re-asks forever. The question text is what a stateless call can resolve.
+   */
+  readonly answers?: ReadonlyArray<{ questionId: string; question?: string; answer: string }>;
   readonly defaultCapitalPaise: number;
   /** Present when revising: the version being changed. */
   readonly current?: StrategyDefinitionV2 | null;
@@ -555,7 +565,12 @@ export function buildCompileInput(input: {
     catalogue: input.catalogue
       .filter((c) => c.tradeable)
       .map((c) => ({ symbol: c.symbol, name: c.name })),
-    answers: input.answers ?? [],
+    // Question text first, so the model reads each as a resolved fact rather
+    // than a dangling id.
+    answers: (input.answers ?? []).map((a) => ({
+      question: a.question ?? a.questionId,
+      answer: a.answer,
+    })),
     defaults: {
       timeframe: TIMEFRAMES[0],
       initialCapitalPaise: input.defaultCapitalPaise,

@@ -94,14 +94,34 @@ describe("validateHypothesis", () => {
     expect(result.status).toBe("INVALID");
   });
 
-  it("refuses a challenge that is not a question — a definition challenges nobody", () => {
+  it("refuses when the only challenges are non-question labels — none survive", () => {
     // Verbatim shape from the first live run that carried challenges: prior-art
-    // labels wearing the challenge hat.
+    // labels wearing the challenge hat. Non-questions are withheld, and with
+    // nothing question-shaped left the answer fails.
     const result = validateHypothesis({
       ...SHARPENED,
+      questions: null,
       challenges: ["Mean reversion – the tendency of prices to return to an average level."],
     });
     expect(result.status).toBe("INVALID");
+  });
+
+  it("accepts premise-questions the model routed into `questions` on a SHARPENED answer", () => {
+    // The live bug: on a sharpened answer the model put its challenge-questions
+    // in `questions` (the intake field) and left `challenges` empty. The two
+    // fields are pooled, so a good answer is no longer rejected for the model's
+    // field confusion.
+    const result = validateHypothesis({
+      ...SHARPENED,
+      challenges: [],
+      questions: [
+        { id: "q1", question: "Who is selling into the fall, and why would they stop?", options: [], because: "" },
+        { id: "q2", question: "Why would this survive transaction costs once everyone screens for it?", options: [], because: "" },
+      ],
+    });
+    expect(result.status).toBe("VALID");
+    if (result.status !== "VALID" || result.view.status !== "SHARPENED") return;
+    expect(result.view.challenges.length).toBeGreaterThanOrEqual(2);
   });
 
   it("refuses a grading key anywhere, the wrong kind, and non-objects", () => {
