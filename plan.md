@@ -1,6 +1,6 @@
 # X-Wealth — Delivery Plan & Tracker
 
-**Owner:** J · **Started:** 18 Aug 2026 · **Last updated:** 28 Aug 2026 (W5)
+**Owner:** J · **Started:** 18 Aug 2026 · **Last updated:** 28 Sep 2026 (W16/W17)
 **Direction:** v2 — single-persona AI strategy lab. See `CLAUDE.md`.
 
 This is the working tracker. It turns `CLAUDE.md` into numbered, checkable work
