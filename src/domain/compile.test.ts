@@ -8,6 +8,7 @@ import {
   compileDefinition,
   definitionRows,
   diffDefinitions,
+  toEventRules,
   type CompileOutput,
   type DefinitionDraft,
 } from "./compile";
@@ -49,6 +50,76 @@ const compiled = (definition: DefinitionDraft): CompileOutput => ({
   definition,
   assumptions: ["Capital left at the default ₹1,00,000."],
   summary: "Buys Reliance when RSI(14) falls below 30.",
+});
+
+describe("compiling event rules (W16-07)", () => {
+  it("compiles a skip-earnings rule the user asked for", () => {
+    const result = compileDefinition(
+      compiled({
+        ...GOOD_DRAFT,
+        eventRules: {
+          skipEntriesWithin: { daysBefore: 3, types: ["EARNINGS"] },
+          flattenBefore: null,
+          noNewPositionsOnExpiryDay: true,
+          sizeMultiplierDuring: null,
+        },
+      }),
+      CATALOGUE,
+    );
+    expect(result.status).toBe("COMPILED");
+    if (result.status !== "COMPILED") return;
+    expect(result.definition.eventRules?.skipEntriesWithin).toEqual({
+      daysBefore: 3,
+      types: ["EARNINGS"],
+    });
+    expect(result.definition.eventRules?.noNewPositionsOnExpiryDay).toBe(true);
+  });
+
+  it("leaves eventRules null when the draft names none — the common case", () => {
+    const result = compileDefinition(compiled(GOOD_DRAFT), CATALOGUE);
+    expect(result.status).toBe("COMPILED");
+    if (result.status !== "COMPILED") return;
+    expect(result.definition.eventRules).toBeNull();
+  });
+
+  it("collapses a rule the model marked on but left empty to null, not noise", () => {
+    // A skip window with no event types is not a rule; it must not survive as
+    // one that never fires.
+    expect(
+      toEventRules({ skipEntriesWithin: { daysBefore: 3, types: [] }, flattenBefore: null }),
+    ).toBeNull();
+    expect(toEventRules(null)).toBeNull();
+  });
+
+  it("drops an unknown event type rather than compiling it", () => {
+    const rules = toEventRules({
+      flattenBefore: { types: ["EARNINGS", "MERGER" as never] },
+    });
+    expect(rules?.flattenBefore?.types).toEqual(["EARNINGS"]);
+  });
+
+  it("rejects an out-of-range window through the real validator", () => {
+    const result = compileDefinition(
+      compiled({
+        ...GOOD_DRAFT,
+        eventRules: {
+          skipEntriesWithin: { daysBefore: 99, types: ["EARNINGS"] },
+          flattenBefore: null,
+          noNewPositionsOnExpiryDay: false,
+          sizeMultiplierDuring: null,
+        },
+      }),
+      CATALOGUE,
+    );
+    expect(result.status).toBe("REJECTED");
+  });
+
+  it("the schema offers eventRules, required and nullable", () => {
+    const def = COMPILE_JSON_SCHEMA.schema.properties.definition;
+    expect([...def.required]).toContain("eventRules");
+    expect(def.properties.eventRules).toBeDefined();
+    expect([...def.properties.eventRules.type]).toContain("null");
+  });
 });
 
 describe("compiling an idea into a definition", () => {

@@ -30,6 +30,7 @@
  * draft and then re-runs the real validator over the result. The model gets no
  * shortcut the authoring form does not have.
  */
+import { MARKET_EVENT_TYPES, type MarketEventType } from "./events";
 import {
   COMPARATORS,
   INDICATORS,
@@ -37,6 +38,7 @@ import {
   TIMEFRAMES,
   type Comparator,
   type Condition,
+  type EventRules,
   type InstrumentChoice,
   type Operand,
   type Sizing,
@@ -49,7 +51,7 @@ import {
 } from "./strategy";
 
 /** Bumped whenever the schema or the prompt changes. Recorded on every row. */
-export const COMPILE_PROMPT_VERSION = "compile-1";
+export const COMPILE_PROMPT_VERSION = "compile-2";
 
 // ---------------------------------------------------------------------------
 // What the model is allowed to return
@@ -109,6 +111,27 @@ export type DefinitionDraft = {
   readonly maxConcurrentPositions: number;
   readonly maxExposurePercent: number;
   readonly initialCapitalPaise: number;
+  /**
+   * §7.4 event rules, and null on the overwhelming majority of strategies —
+   * the model only fills this when the user's own words name an event to act
+   * on ("skip earnings", "flat before results", "nothing on expiry day").
+   * Nested objects rather than a union, the same shape `EventRules` takes, so
+   * `toEventRules` is close to a straight copy and every sub-rule is
+   * independently object-or-null.
+   */
+  readonly eventRules?: EventRulesDraft | null;
+};
+
+export type EventWindowDraft = {
+  readonly daysBefore: number;
+  readonly types: readonly string[];
+};
+
+export type EventRulesDraft = {
+  readonly skipEntriesWithin?: EventWindowDraft | null;
+  readonly flattenBefore?: { readonly types: readonly string[] } | null;
+  readonly noNewPositionsOnExpiryDay?: boolean | null;
+  readonly sizeMultiplierDuring?: (EventWindowDraft & { readonly multiplier: number }) | null;
 };
 
 /**
@@ -164,6 +187,74 @@ const CONDITION_SCHEMA = {
   },
 } as const;
 
+const EVENT_TYPES_SCHEMA = {
+  type: "array",
+  items: { type: "string", enum: [...MARKET_EVENT_TYPES] },
+  maxItems: MARKET_EVENT_TYPES.length,
+  description: "Market event types this rule concerns. Empty means the rule does not apply.",
+} as const;
+
+const EVENT_WINDOW_MAX = LIMITS.eventDaysBefore.max;
+
+/**
+ * §7.4 event rules — every sub-rule nullable, and the whole block null unless
+ * the user's own words named an event to act on. Nested objects rather than a
+ * union, the pattern the rest of this schema uses; `toEventRules` shapes what
+ * comes back and `validateStrategyDefinition` bounds it.
+ */
+const EVENT_RULES_SCHEMA = {
+  type: ["object", "null"],
+  additionalProperties: false,
+  required: [
+    "skipEntriesWithin",
+    "flattenBefore",
+    "noNewPositionsOnExpiryDay",
+    "sizeMultiplierDuring",
+  ],
+  properties: {
+    skipEntriesWithin: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["daysBefore", "types"],
+      properties: {
+        daysBefore: { type: "integer", minimum: 0, maximum: EVENT_WINDOW_MAX },
+        types: EVENT_TYPES_SCHEMA,
+      },
+      description: "No new entries within this many sessions of these events. Null if not asked.",
+    },
+    flattenBefore: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["types"],
+      properties: { types: EVENT_TYPES_SCHEMA },
+      description: "Close any open position before these events. Null if not asked.",
+    },
+    noNewPositionsOnExpiryDay: {
+      type: "boolean",
+      description: "True only if the user asked to avoid opening on F&O expiry day.",
+    },
+    sizeMultiplierDuring: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["daysBefore", "types", "multiplier"],
+      properties: {
+        daysBefore: { type: "integer", minimum: 0, maximum: EVENT_WINDOW_MAX },
+        types: EVENT_TYPES_SCHEMA,
+        multiplier: {
+          type: "number",
+          minimum: LIMITS.eventSizeMultiplier.min,
+          maximum: LIMITS.eventSizeMultiplier.max,
+          description: "Scales entries DOWN inside the window (<= 1).",
+        },
+      },
+      description: "Scale entry size within this window. Null if not asked.",
+    },
+  },
+  description:
+    "Market-event handling (§7.4). Null on almost every strategy — fill only when the user " +
+    "explicitly names an event to skip, flatten before, avoid on expiry, or size around.",
+} as const;
+
 /**
  * The contract with the provider.
  *
@@ -211,7 +302,7 @@ export const COMPILE_JSON_SCHEMA = {
           "instruments", "minAvgTurnoverPaise", "timeframe", "entry", "exit",
           "stopLossPercent", "targetPercent", "sizingKind", "riskPercent",
           "capitalPercent", "maxConcurrentPositions", "maxExposurePercent",
-          "initialCapitalPaise",
+          "initialCapitalPaise", "eventRules",
         ],
         properties: {
           instruments: {
@@ -264,6 +355,7 @@ export const COMPILE_JSON_SCHEMA = {
             minimum: LIMITS.initialCapitalPaise.min,
             maximum: LIMITS.initialCapitalPaise.max,
           },
+          eventRules: EVENT_RULES_SCHEMA,
         },
       },
       assumptions: { type: ["array", "null"], items: { type: "string" }, maxItems: 8 },
@@ -386,6 +478,53 @@ export function toSizing(draft: DefinitionDraft, issues: ValidationIssue[]): Siz
  * ever stops being true, the compiler has become a way around the six
  * mandatory components rather than a way to reach them.
  */
+/**
+ * Draft event rules → `EventRules`, or null.
+ *
+ * Bounds and event-type validity are left to `validateStrategyDefinition`,
+ * which already owns them — this only shapes the draft and drops a sub-rule
+ * the model returned "on" but empty (a skip window with no types is not a
+ * rule, it is noise). If every sub-rule is empty the whole block collapses to
+ * null, so "the model mentioned events but named none" compiles to a plain
+ * strategy rather than a rule that never fires.
+ */
+export function toEventRules(draft: EventRulesDraft | null | undefined): EventRules | null {
+  if (!draft) return null;
+
+  const types = (raw: readonly string[] | undefined): MarketEventType[] =>
+    (raw ?? []).filter((t): t is MarketEventType =>
+      (MARKET_EVENT_TYPES as readonly string[]).includes(t),
+    );
+
+  const skipTypes = draft.skipEntriesWithin ? types(draft.skipEntriesWithin.types) : [];
+  const flattenTypes = draft.flattenBefore ? types(draft.flattenBefore.types) : [];
+  const sizeTypes = draft.sizeMultiplierDuring ? types(draft.sizeMultiplierDuring.types) : [];
+
+  const rules: EventRules = {
+    skipEntriesWithin:
+      draft.skipEntriesWithin && skipTypes.length > 0
+        ? { daysBefore: draft.skipEntriesWithin.daysBefore, types: skipTypes }
+        : null,
+    flattenBefore: draft.flattenBefore && flattenTypes.length > 0 ? { types: flattenTypes } : null,
+    noNewPositionsOnExpiryDay: draft.noNewPositionsOnExpiryDay === true,
+    sizeMultiplierDuring:
+      draft.sizeMultiplierDuring && sizeTypes.length > 0
+        ? {
+            daysBefore: draft.sizeMultiplierDuring.daysBefore,
+            types: sizeTypes,
+            multiplier: draft.sizeMultiplierDuring.multiplier,
+          }
+        : null,
+  };
+
+  const empty =
+    !rules.skipEntriesWithin &&
+    !rules.flattenBefore &&
+    !rules.noNewPositionsOnExpiryDay &&
+    !rules.sizeMultiplierDuring;
+  return empty ? null : rules;
+}
+
 export function compileDefinition(
   output: CompileOutput,
   catalogue?: readonly InstrumentChoice[],
@@ -442,6 +581,7 @@ export function compileDefinition(
     maxConcurrentPositions: draft.maxConcurrentPositions,
     maxExposurePercent: draft.maxExposurePercent,
     initialCapitalPaise: draft.initialCapitalPaise,
+    eventRules: toEventRules(draft.eventRules),
   };
 
   const validation = validateStrategyDefinition(definition, catalogue);
@@ -501,6 +641,10 @@ export const COMPILE_SYSTEM_PROMPT = [
   "6. Anything you settled without asking goes in `assumptions`, in plain words.",
   "7. `summary` restates the compiled rules for the person who wrote them — what",
   "   the rules do, not whether they are any good.",
+  "8. `eventRules` is null unless the user's own words name a market event to",
+  "   act on — 'skip earnings', 'flat before results', 'nothing on expiry',",
+  "   'trade smaller around RBI'. Never add event handling they did not ask for,",
+  "   and if they name an event you have no type for, ask rather than invent.",
 ].join("\n");
 
 /**

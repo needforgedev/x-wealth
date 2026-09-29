@@ -20,6 +20,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 const { buildCompileInput, compileDefinition, COMPILE_PROMPT_VERSION } = await import("@/domain/compile");
+const { describeEventRules } = await import("@/domain/strategy");
 const { resolveProvider } = await import("@/server/ai/registry");
 const { runInteraction } = await import("@/server/ai/interaction");
 
@@ -40,7 +41,11 @@ const CATALOGUE = [
 ];
 
 /** Things a trader types. The last two are incomplete on purpose. */
-const IDEAS: Array<{ idea: string; expect: "COMPILED" | "NEEDS_INPUT" }> = [
+const IDEAS: Array<{
+  idea: string;
+  expect: "COMPILED" | "NEEDS_INPUT";
+  expectEventRule?: boolean;
+}> = [
   {
     idea: "Buy Reliance when the 14-day RSI drops below 30, sell when it goes back above 60. " +
       "5% stop loss, risk 1% of capital per trade, take profit at 20%.",
@@ -50,6 +55,13 @@ const IDEAS: Array<{ idea: string; expect: "COMPILED" | "NEEDS_INPUT" }> = [
     idea: "On TCS and Infosys, go long when the 20-day moving average crosses above the 50-day. " +
       "Exit on the reverse cross. Stop 4% below entry, risk 2% per trade.",
     expect: "COMPILED",
+  },
+  {
+    // W16-07: an idea that names an event to act on. eventRules must appear.
+    idea: "On Reliance, buy when the 20-day MA crosses above the 50-day, exit on the reverse " +
+      "cross, 5% stop, risk 1% per trade — but never open a new position within 3 days of earnings.",
+    expect: "COMPILED",
+    expectEventRule: true,
   },
   { idea: "Buy HDFC Bank when it looks oversold.", expect: "NEEDS_INPUT" },
   { idea: "I want to trade the Nifty when momentum turns up.", expect: "NEEDS_INPUT" },
@@ -69,7 +81,7 @@ const provider = resolveProvider();
 console.log(`\ncompiling against ${provider.metadata.name}\n`);
 
 let failures = 0;
-for (const { idea, expect } of IDEAS) {
+for (const { idea, expect, expectEventRule } of IDEAS) {
   const short = idea.length > 68 ? `${idea.slice(0, 65)}...` : idea;
   try {
     const logged = await runInteraction({
@@ -82,7 +94,9 @@ for (const { idea, expect } of IDEAS) {
     });
 
     const result = compileDefinition(logged.output as never, CATALOGUE);
-    const ok = result.status === expect;
+    const eventOk =
+      !expectEventRule || (result.status === "COMPILED" && result.definition.eventRules !== null);
+    const ok = result.status === expect && eventOk;
     if (!ok) failures++;
 
     console.log(`  ${ok ? "PASS" : "FAIL"}  ${short}`);
@@ -92,6 +106,11 @@ for (const { idea, expect } of IDEAS) {
       const d = result.definition;
       console.log(`        ${d.universe.instruments.join(", ")} · stop ${d.stopLossPercent}% · ` +
         `target ${d.targetPercent ?? "none"} · ${d.sizing.kind}`);
+      if (d.eventRules) {
+        console.log(`        event rules: ${describeEventRules(d.eventRules)}`);
+      } else if (expectEventRule) {
+        console.log(`        event rules: NONE (expected one)`);
+      }
       if (result.assumptions.length > 0) {
         console.log(`        assumed: ${result.assumptions.join(" | ")}`);
       }
